@@ -141,16 +141,31 @@ export default function AnalysisView({ userName }: AnalysisViewProps) {
   }, [searchQuery, interviewModeFilter, allFeedbacks]);
 
   const downloadFeedback = (feedback: Feedback) => {
-    const content = `Interview Feedback Report
+    // Build content with cleaned markdown
+    let content = `Interview Feedback Report
 Generated: ${new Date(feedback.created_at).toLocaleString()}
 Session ID: ${feedback.session_id}
 Candidate: ${feedback.user_name}
 Interview Mode: ${feedback.interview_mode}
 
-${feedback.feedback_text}
-
-${feedback.job_description ? `\nJob Description:\n${feedback.job_description}\n` : ''}
 `;
+
+    // Add sections with cleaned markdown
+    if (feedback.sections && Object.keys(feedback.sections).length > 0) {
+      Object.entries(feedback.sections).forEach(([sectionTitle, sectionContent]) => {
+        const cleanedTitle = cleanMarkdown(sectionTitle);
+        const cleanedContent = cleanMarkdown(sectionContent);
+        content += `\n${cleanedTitle}\n${'='.repeat(cleanedTitle.length)}\n${cleanedContent}\n`;
+      });
+    } else if (feedback.feedback_text) {
+      // Fallback to feedback_text if sections are not available
+      content += cleanMarkdown(feedback.feedback_text);
+    }
+
+    // Add job description if available
+    if (feedback.job_description) {
+      content += `\n\n${'='.repeat(50)}\nJob Description\n${'='.repeat(50)}\n${cleanMarkdown(feedback.job_description)}\n`;
+    }
 
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
