@@ -20,18 +20,47 @@ class DatabaseConfig:
     _database = None
 
 async def get_database():
-    """Get database connection"""
+    """Get database connection with retry logic"""
     global DatabaseConfig
     
+    # If database is None or connection is stale, reconnect
     if DatabaseConfig._database is None:
         try:
-            DatabaseConfig._client = AsyncIOMotorClient(DatabaseConfig.MONGODB_URL)
+            logger.info(f"Connecting to MongoDB: {DatabaseConfig.MONGODB_URL}")
+            logger.info(f"Database name: {DatabaseConfig.MONGODB_DB_NAME}")
+            
+            DatabaseConfig._client = AsyncIOMotorClient(
+                DatabaseConfig.MONGODB_URL,
+                serverSelectionTimeoutMS=5000  # 5 second timeout
+            )
             DatabaseConfig._database = DatabaseConfig._client[DatabaseConfig.MONGODB_DB_NAME]
+            
+            # Test connection
             await DatabaseConfig._client.admin.command('ping')
-            logger.info("✅ MongoDB connected successfully")
-        except ConnectionFailure as e:
+            logger.info(f"✅ MongoDB connected successfully to database: {DatabaseConfig.MONGODB_DB_NAME}")
+            
+            # Verify collection exists and can be accessed
+            collections = await DatabaseConfig._database.list_collection_names()
+            logger.info(f"✅ Available collections: {collections}")
+            
+        except Exception as e:
             logger.error(f"❌ MongoDB connection failed: {e}")
+            logger.error(f"   URL: {DatabaseConfig.MONGODB_URL}")
+            logger.error(f"   Database: {DatabaseConfig.MONGODB_DB_NAME}")
+            # Reset connection state so it can retry
+            DatabaseConfig._client = None
+            DatabaseConfig._database = None
             raise
+    
+    # Verify connection is still alive
+    try:
+        await DatabaseConfig._client.admin.command('ping')
+    except Exception as e:
+        logger.warning(f"⚠️ MongoDB connection lost, reconnecting...: {e}")
+        DatabaseConfig._client = None
+        DatabaseConfig._database = None
+        # Retry connection
+        return await get_database()
     
     return DatabaseConfig._database
 

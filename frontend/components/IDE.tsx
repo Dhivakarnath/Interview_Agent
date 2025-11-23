@@ -12,7 +12,7 @@ interface IDEProps {
 
 export default function IDE({ onSendCode, isConnected }: IDEProps) {
   const [code, setCode] = useState(`# Welcome to the Coding Practice IDE!
-# Write your code here and click "Send Code" to get feedback from Nila
+# Write your code here and click "Send Code"
 
 def example_function():
     # Your code here
@@ -108,7 +108,7 @@ def example_function():
 
       {/* Footer Info */}
       <div className="p-2 bg-gray-800/30 border-t border-cyan-500/20 text-xs text-gray-400">
-        💡 Tip: Write your code here and click "Send Code" to get real-time feedback from Nila
+        💡 Tip: Write your code here and click "Send Code"
       </div>
     </div>
   );

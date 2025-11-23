@@ -21,6 +21,8 @@ import json
 from config.settings import Config
 from services.rag_service import RAGService
 from services.document_parser import DocumentParser
+from models.feedback import FeedbackModel
+from config.database import get_database
 
 # Global RAG service instance
 rag_service = RAGService()
@@ -35,9 +37,42 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown"""
+    logger.info("🚀 Starting backend initialization...")
+    
+    # Initialize MongoDB connection at startup
+    try:
+        from config.database import get_database, DatabaseConfig
+        from models.feedback import FeedbackModel
+        
+        # Test MongoDB connection
+        db = await get_database()
+        collection = db[FeedbackModel.COLLECTION_NAME]
+        
+        # Create indexes
+        FeedbackModel.create_indexes(collection)
+        
+        # Verify existing data
+        count = await collection.count_documents({})
+        logger.info(f"✅ MongoDB connected successfully: {DatabaseConfig.MONGODB_URL}")
+        logger.info(f"✅ Database: {DatabaseConfig.MONGODB_DB_NAME}")
+        logger.info(f"✅ Collection: {FeedbackModel.COLLECTION_NAME}")
+        logger.info(f"✅ Existing feedback documents: {count}")
+        logger.info(f"✅ Feedback collection indexes created")
+    except Exception as e:
+        logger.warning(f"⚠️ MongoDB connection failed at startup: {e}")
+        logger.warning("⚠️ Feedback features will not be available until MongoDB is connected")
+        logger.warning("⚠️ The server will attempt to reconnect on the next API call")
+    
     logger.info("✅ Backend initialized successfully")
-    logger.info("📝 Sessions stored in memory (MongoDB not required for basic functionality)")
     yield
+    
+    # Cleanup on shutdown
+    try:
+        from config.database import close_database
+        await close_database()
+    except Exception as e:
+        logger.warning(f"Error closing database connection: {e}")
+    
     logger.info("✅ Backend shutdown complete")
 
 
@@ -315,6 +350,96 @@ async def health():
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+
+@app.get("/api/feedback/user")
+async def get_all_feedback_fallback(limit: int = 100):
+    """Fallback endpoint for /api/feedback/user without user_name - returns all feedbacks"""
+    try:
+        db = await get_database()
+        if db is None:
+            raise HTTPException(status_code=503, detail="MongoDB connection unavailable. Please ensure MongoDB is running.")
+        
+        collection = db[FeedbackModel.COLLECTION_NAME]
+        feedbacks = await FeedbackModel.get_all_feedback(collection, limit)
+        
+        logger.info(f"Retrieved {len(feedbacks)} feedback entries (all users)")
+        
+        return {
+            "success": True,
+            "feedbacks": feedbacks,
+            "count": len(feedbacks)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving all feedback: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve feedback: {str(e)}")
+
+
+@app.get("/api/feedback/user/{user_name}")
+async def get_user_feedback(user_name: str, limit: int = 100):
+    """Get all feedback for a user"""
+    try:
+        db = await get_database()
+        if db is None:
+            raise HTTPException(status_code=503, detail="MongoDB connection unavailable. Please ensure MongoDB is running.")
+        
+        collection = db[FeedbackModel.COLLECTION_NAME]
+        feedbacks = await FeedbackModel.get_feedback_by_user(collection, user_name, limit)
+        
+        logger.info(f"Retrieved {len(feedbacks)} feedback entries for user: {user_name}")
+        
+        return {
+            "success": True,
+            "feedbacks": feedbacks,
+            "count": len(feedbacks)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving user feedback for {user_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve feedback: {str(e)}")
+
+
+@app.get("/api/feedback/{session_id}")
+async def get_feedback(session_id: str):
+    """Get feedback for a specific session"""
+    try:
+        db = await get_database()
+        collection = db[FeedbackModel.COLLECTION_NAME]
+        feedback = await FeedbackModel.get_feedback_by_session(collection, session_id)
+        
+        if not feedback:
+            raise HTTPException(status_code=404, detail="Feedback not found")
+        
+        return {
+            "success": True,
+            "feedback": feedback
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving feedback: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve feedback: {str(e)}")
+
+
+@app.get("/api/feedback")
+async def get_all_feedback(limit: int = 50):
+    """Get all feedback"""
+    try:
+        db = await get_database()
+        collection = db[FeedbackModel.COLLECTION_NAME]
+        feedbacks = await FeedbackModel.get_all_feedback(collection, limit)
+        
+        return {
+            "success": True,
+            "feedbacks": feedbacks,
+            "count": len(feedbacks)
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving feedback: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve feedback: {str(e)}")
 
 
 @app.get("/api/")

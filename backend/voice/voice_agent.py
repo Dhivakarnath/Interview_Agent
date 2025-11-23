@@ -68,6 +68,11 @@ class InterviewAssistant(Agent):
         self._session_context = None  # Store session context for silence checks
         self._agent_session = None  # Store agent session for silence checks
         self._is_checking_silence = False  # Flag to prevent duplicate silence checks
+        self._transcript = []  # Track conversation transcript for feedback
+        self._session_id = None  # Store session ID for feedback
+        self._user_name = None  # Store user name for feedback
+        self._job_description = None  # Store job description for feedback
+        self._user_is_speaking = False  # Track if user is currently speaking
     
     async def on_enter(self):
         """Called when agent enters the room - set up video streams and audio tracking"""
@@ -141,11 +146,28 @@ class InterviewAssistant(Agent):
         # Import ImageContent here to avoid import issues
         from livekit.agents.llm import ImageContent
         
+        # Track user message in transcript
+        if self._interview_mode == "mock-interview":
+            user_content = ""
+            if hasattr(new_message, 'content') and new_message.content:
+                for content_item in new_message.content:
+                    if hasattr(content_item, 'text'):
+                        user_content += content_item.text + " "
+                user_content = user_content.strip()
+            
+            if user_content:
+                self._transcript.append({
+                    "role": "user",
+                    "content": user_content,
+                    "timestamp": datetime.now().isoformat()
+                })
+        
         # Reset silence check timer when user responds
         if self._interview_mode == "mock-interview":
-            # Reset the timestamp so silence detection restarts after next agent message
+            # Mark that user is speaking and reset the timestamp
+            self._user_is_speaking = True
             self._last_question_time = None
-            logger.info("⏱️ User responded - silence timer reset, will restart after next agent message")
+            logger.info("⏱️ User responded - silence timer reset, user is speaking")
         
         # Add camera frame if available
         if self._latest_camera_frame:
@@ -177,6 +199,31 @@ class InterviewAssistant(Agent):
             # This ensures we catch all agent speech even if wrapper doesn't fire
             self._last_question_time = time.time()
             logger.info("⏱️ Agent finished speaking (on_agent_turn_completed), timestamp updated")
+            
+            # Track agent message in transcript
+            try:
+                # Get the last assistant message from context
+                messages = turn_ctx.messages
+                if messages:
+                    last_msg = messages[-1]
+                    if hasattr(last_msg, 'content'):
+                        agent_content = ""
+                        if isinstance(last_msg.content, str):
+                            agent_content = last_msg.content
+                        elif isinstance(last_msg.content, list):
+                            for item in last_msg.content:
+                                if hasattr(item, 'text'):
+                                    agent_content += item.text + " "
+                            agent_content = agent_content.strip()
+                        
+                        if agent_content:
+                            self._transcript.append({
+                                "role": "assistant",
+                                "content": agent_content,
+                                "timestamp": datetime.now().isoformat()
+                            })
+            except Exception as e:
+                logger.debug(f"Could not track agent message in transcript: {e}")
 
 
 def prewarm(proc: JobProcess):
@@ -506,6 +553,12 @@ Use this job description to:
     
     assistant = InterviewAssistant(chat_ctx=initial_ctx, rag_tool=rag_tool, instructions=prompt, interview_mode=interview_mode)
     
+    # Store session metadata in assistant for feedback generation
+    session_id = metadata_dict.get('session_id') if metadata_dict else None
+    assistant._session_id = session_id
+    assistant._user_name = user_name_for_rag or user_name
+    assistant._job_description = job_description
+    
     # Store session reference in assistant for silence checks
     assistant._agent_session = session
     
@@ -525,10 +578,19 @@ Use this job description to:
             if "Are you still there" in text or "Can you hear me" in text:
                 return result
             
+            # Track agent message in transcript
+            assistant._transcript.append({
+                "role": "assistant",
+                "content": text,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            # Mark that user is no longer speaking (agent finished, now waiting for user)
+            assistant._user_is_speaking = False
             # After agent finishes speaking, update the timestamp
             # This ensures silence detection works throughout the entire session
             assistant._last_question_time = time.time()
-            logger.info(f"⏱️ Agent finished speaking (via session.say): '{text[:50]}...' - timestamp updated: {assistant._last_question_time}")
+            logger.info(f"⏱️ Agent finished speaking (via session.say): '{text[:50]}...' - timestamp updated, waiting for user response")
             return result
         
         # Replace session.say BEFORE starting the session
@@ -556,8 +618,9 @@ Use this job description to:
             """Called when metrics are collected - check for TTS completion"""
             if isinstance(event.metrics, TTSMetrics):
                 # TTS completed - agent finished speaking
+                assistant._user_is_speaking = False  # Agent finished, waiting for user
                 assistant._last_question_time = time.time()
-                logger.info(f"⏱️ Agent finished speaking (via TTSMetrics completion), timestamp updated: {assistant._last_question_time}")
+                logger.info(f"⏱️ Agent finished speaking (via TTSMetrics completion), timestamp updated, waiting for user response")
         
         logger.info("✅ Session TTSMetrics handler registered for silence detection")
     
@@ -572,16 +635,36 @@ Use this job description to:
                 try:
                     await asyncio.sleep(1.0)  # Check every second
                     
+                    # Skip if user is currently speaking or session is closing
+                    if assistant._user_is_speaking:
+                        continue
+                    
+                    # Check if session is still active
+                    try:
+                        if not session.is_running:
+                            logger.info("⏱️ Session is not running, stopping silence monitoring")
+                            break
+                    except:
+                        break
+                    
                     # Only check if we have a timestamp and we're not already checking
                     if assistant._last_question_time and not assistant._is_checking_silence:
                         time_since_question = time.time() - assistant._last_question_time
                         
                         if time_since_question >= 5.0:
+                            # Double-check user is not speaking before asking
+                            if assistant._user_is_speaking:
+                                continue
+                                
                             # Prevent duplicate checks
                             assistant._is_checking_silence = True
                             logger.info("⏱️ 5 seconds of silence detected - checking if candidate is available")
                             
                             try:
+                                # Check session is still running before asking
+                                if not session.is_running:
+                                    break
+                                    
                                 # Ask if candidate is available using original_say
                                 if original_say:
                                     await original_say("Are you still there? Can you hear me?")
@@ -592,6 +675,9 @@ Use this job description to:
                                 logger.info("⏱️ Silence check message sent, continuing to monitor")
                             except Exception as e:
                                 logger.warning(f"Error asking if candidate is available: {e}")
+                                # If session is closing, break the loop
+                                if "closing" in str(e).lower() or "isn't running" in str(e).lower():
+                                    break
                             finally:
                                 assistant._is_checking_silence = False
                                 
@@ -682,6 +768,92 @@ Use this job description to:
             greeting = "Hello. I'm Nila, and I'll be conducting your interview today. Please make sure to turn on your camera and share your screen."
         await session.say(greeting)
         logger.info("🎯 Mock interview mode - professional greeting sent")
+        
+        # Track greeting in transcript
+        assistant._transcript.append({
+            "role": "assistant",
+            "content": greeting,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Set up feedback generation when session ends
+        # Use a flag to prevent duplicate feedback generation
+        feedback_generated = False
+        
+        async def generate_feedback_on_end():
+            """Generate feedback when session ends"""
+            nonlocal feedback_generated
+            
+            # Prevent duplicate feedback generation
+            if feedback_generated:
+                logger.info("📝 Feedback already generated, skipping duplicate")
+                return
+            
+            try:
+                logger.info(f"📝 Feedback generation triggered - session_id: {assistant._session_id}, transcript length: {len(assistant._transcript)}")
+                if assistant._session_id and len(assistant._transcript) > 0:
+                    feedback_generated = True  # Set flag immediately to prevent duplicates
+                    logger.info(f"📝 Generating feedback for session: {assistant._session_id}")
+                    
+                    # Import feedback service
+                    from services.feedback_service import FeedbackService
+                    from models.feedback import FeedbackModel
+                    from config.database import get_database
+                    
+                    feedback_service = FeedbackService()
+                    feedback_data = await feedback_service.generate_feedback(
+                        session_id=assistant._session_id,
+                        user_name=assistant._user_name or "Candidate",
+                        transcript=assistant._transcript,
+                        job_description=assistant._job_description,
+                        interview_mode=interview_mode
+                    )
+                    
+                    # Save to MongoDB
+                    try:
+                        db = await get_database()
+                        collection = db[FeedbackModel.COLLECTION_NAME]
+                        FeedbackModel.create_indexes(collection)
+                        await FeedbackModel.save_feedback(
+                            collection=collection,
+                            session_id=assistant._session_id,
+                            user_name=assistant._user_name or "Candidate",
+                            feedback_data=feedback_data,
+                            job_description=assistant._job_description,
+                            interview_mode=interview_mode
+                        )
+                        logger.info(f"✅ Feedback saved to MongoDB for session: {assistant._session_id}")
+                    except Exception as db_error:
+                        logger.error(f"❌ Failed to save feedback to MongoDB: {db_error}", exc_info=True)
+                        feedback_generated = False  # Reset flag on error so it can retry
+                    
+                    # Provide feedback verbally to user
+                    try:
+                        feedback_summary = feedback_data.get("sections", {}).get("Overall Performance Summary", "")
+                        if feedback_summary:
+                            summary_short = feedback_summary[:200] + "..." if len(feedback_summary) > 200 else feedback_summary
+                            await session.say(f"Thank you for the interview. Here's a brief summary: {summary_short} Full detailed feedback has been saved and is available in the Analysis tab.")
+                        else:
+                            await session.say("Thank you for the interview. Your detailed feedback has been generated and saved. You can view it in the Analysis tab.")
+                    except Exception as say_error:
+                        logger.warning(f"Could not provide verbal feedback: {say_error}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error generating feedback: {e}", exc_info=True)
+                feedback_generated = False  # Reset flag on error so it can retry
+        
+        # Hook into ctx shutdown callback (most reliable way to catch session end)
+        async def on_shutdown():
+            """Called when job context shuts down"""
+            if interview_mode == "mock-interview":
+                logger.info("📝 Job context shutting down - triggering feedback generation")
+                await generate_feedback_on_end()
+        
+        ctx.add_shutdown_callback(on_shutdown)
+        logger.info("✅ Feedback generation hook registered on job context shutdown")
+        
+        # Note: Removed room disconnect hook to prevent duplicate feedback generation
+        # The shutdown callback is sufficient and more reliable
     else:
         greeting = await _generate_personalized_greeting(llm_instance, user_name)
         await session.say(greeting)

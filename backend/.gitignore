@@ -178,3 +178,5 @@ tmp/
 temp/
 
 .sonar/
+
+.DS_Store

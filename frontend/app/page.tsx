@@ -20,8 +20,9 @@ import {
 import { Room, RoomEvent, RemoteParticipant, RemoteTrack, Track } from 'livekit-client';
 import IDE from '../components/IDE';
 import MockInterviewView from '../components/MockInterviewView';
+import AnalysisView from '../components/AnalysisView';
 
-type TabType = 'practice' | 'mock-interview' | 'settings';
+type TabType = 'practice' | 'mock-interview' | 'analysis';
 
 // Helper function to clean markdown and format text professionally
 function cleanText(text: string): string {
@@ -372,15 +373,18 @@ export default function Home() {
               </button>
             )}
             <button
-              onClick={() => setActiveTab('settings')}
+              onClick={() => {
+                setActiveTab('analysis');
+                setIsIDEView(false);
+              }}
               className={`w-full text-left px-4 py-3 rounded-lg transition-all ${
-                activeTab === 'settings'
+                activeTab === 'analysis'
                   ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
                   : 'text-gray-400 hover:text-cyan-400 hover:bg-gray-800'
               }`}
-              title={isSidebarCollapsed ? 'Settings' : ''}
+              title={isSidebarCollapsed ? 'Analysis' : ''}
             >
-              {isSidebarCollapsed ? '⚙️' : '⚙️ Settings'}
+              {isSidebarCollapsed ? '📊' : '📊 Analysis'}
             </button>
           </nav>
 
@@ -402,7 +406,11 @@ export default function Home() {
 
                 {/* Main Content */}
                 <div className="flex-1 flex flex-col overflow-hidden">
-                  {activeTab === 'mock-interview' ? (
+                  {activeTab === 'analysis' ? (
+                    <div className="flex-1 overflow-y-auto">
+                      <AnalysisView userName={userName} />
+                    </div>
+                  ) : activeTab === 'mock-interview' ? (
                     <div className="flex-1 overflow-y-auto">
                       <MockInterviewView
                         userName={userName}
@@ -632,59 +640,6 @@ export default function Home() {
                   </div>
                 ) : null}
 
-                {activeTab === 'settings' && (
-                  <div className="flex-1 overflow-auto p-6">
-                    <div className="max-w-4xl mx-auto">
-                      <div className="bg-gray-800/50 backdrop-blur-sm border border-cyan-500/30 rounded-xl p-8">
-                        <h3 className="text-xl font-semibold mb-6 text-cyan-400 flex items-center gap-2">
-                          <span>⚙️</span> Settings
-                        </h3>
-                        
-                        <div className="space-y-6">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                              Your Name
-                            </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                value={userName}
-                                onChange={(e) => setUserName(e.target.value)}
-                                placeholder="Enter your name"
-                                className="flex-1 px-4 py-3 bg-gray-900/50 border border-cyan-500/30 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-white placeholder-gray-500"
-                                onKeyPress={(e) => e.key === 'Enter' && updateName()}
-                              />
-                              <button
-                                onClick={updateName}
-                                className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg hover:from-cyan-600 hover:to-blue-700 transition-all"
-                              >
-                                Update
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="border-t border-cyan-500/20 pt-6">
-                            <h4 className="text-sm font-semibold text-gray-300 mb-4">Session Information</h4>
-                            <div className="space-y-2 text-sm">
-                              <div className="flex justify-between">
-                                <span className="text-gray-400">Room Name:</span>
-                                <span className="font-mono text-cyan-400">{sessionData?.room_name}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-400">Session ID:</span>
-                                <span className="font-mono text-cyan-400">{sessionData?.session_id}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-400">Status:</span>
-                                <span className="text-green-400">Active</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           )}
