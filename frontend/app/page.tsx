@@ -5,15 +5,17 @@ import {
   RoomAudioRenderer, 
   StartAudio, 
   RoomContext,
-  BarVisualizer,
   useTrackToggle,
   useLocalParticipant,
   useVoiceAssistant,
   useChat,
   useTranscriptions,
   useRoomContext,
+  VideoTrack,
+  useTracks,
   type ReceivedChatMessage,
   type TextStreamData,
+  type TrackReference,
 } from '@livekit/components-react';
 import { Room, RoomEvent, RemoteParticipant, RemoteTrack, Track } from 'livekit-client';
 
@@ -619,6 +621,31 @@ function InterviewAgentView({
     source: Track.Source.Microphone,
   });
   
+  // Camera and Screen Share toggles
+  const cameraToggle = useTrackToggle({
+    source: Track.Source.Camera,
+  });
+  
+  const screenShareToggle = useTrackToggle({
+    source: Track.Source.ScreenShare,
+  });
+  
+  // Get camera and screen share tracks
+  const [screenShareTrack] = useTracks([Track.Source.ScreenShare]);
+  const cameraPublication = localParticipant?.getTrackPublication(Track.Source.Camera);
+  const cameraTrack: TrackReference | undefined = useMemo(() => {
+    if (!cameraPublication || !localParticipant) return undefined;
+    return {
+      participant: localParticipant,
+      source: Track.Source.Camera,
+      publication: cameraPublication,
+    };
+  }, [cameraPublication, localParticipant]);
+  
+  const isCameraEnabled = cameraTrack && !cameraTrack.publication.isMuted;
+  const isScreenShareEnabled = screenShareTrack && !screenShareTrack.publication.isMuted;
+  const hasVideo = isCameraEnabled || isScreenShareEnabled;
+  
   // Get transcriptions and chat messages
   const transcriptions: TextStreamData[] = useTranscriptions();
   const chat = useChat();
@@ -632,17 +659,8 @@ function InterviewAgentView({
     return merged.sort((a, b) => a.timestamp - b.timestamp);
   }, [transcriptions, chat.chatMessages, room]);
   
-  // Create track reference for microphone visualizer
-  const micTrackRef = useMemo(() => {
-    if (!microphoneTrack || !localParticipant) return undefined;
-    return {
-      participant: localParticipant,
-      source: Track.Source.Microphone,
-      publication: microphoneTrack,
-    };
-  }, [localParticipant, microphoneTrack]);
-  
-  const { state: agentState, audioTrack: agentAudioTrack } = useVoiceAssistant();
+  // Voice assistant state (kept for potential future use)
+  useVoiceAssistant();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -660,162 +678,182 @@ function InterviewAgentView({
     chat.send(message);
   };
 
+  // Get audio track for visualizer
+  const micTrackRef = useMemo(() => {
+    if (!microphoneTrack || !localParticipant) return undefined;
+    return {
+      participant: localParticipant,
+      source: Track.Source.Microphone,
+      publication: microphoneTrack,
+    };
+  }, [localParticipant, microphoneTrack]);
+
   return (
     <>
       <RoomAudioRenderer />
       <StartAudio label="Start Audio" />
       
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Audio Visualizer Section */}
-        <div className="bg-gray-800/50 border-b border-cyan-500/20 p-6">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-cyan-400">Voice Activity</h3>
-              <div className="flex items-center gap-3">
+      <div className="flex-1 flex overflow-hidden">
+        {/* Middle Panel - CHAT */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Chat Header */}
+          <div className="bg-gray-800/50 border-b border-cyan-500/20 p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Chat</h3>
+              <div className="flex items-center gap-2">
+                {/* Camera Toggle */}
+                <button
+                  onClick={() => cameraToggle.toggle()}
+                  disabled={cameraToggle.pending}
+                  className={`p-2 rounded transition-all ${
+                    isCameraEnabled
+                      ? 'bg-blue-600/20 text-blue-400'
+                      : 'bg-gray-700/20 text-gray-400'
+                  } disabled:opacity-50`}
+                  title="Toggle camera"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
+                
+                {/* Screen Share Toggle */}
+                <button
+                  onClick={() => screenShareToggle.toggle()}
+                  disabled={screenShareToggle.pending}
+                  className={`p-2 rounded transition-all ${
+                    isScreenShareEnabled
+                      ? 'bg-purple-600/20 text-purple-400'
+                      : 'bg-gray-700/20 text-gray-400'
+                  } disabled:opacity-50`}
+                  title="Toggle screen share"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                </button>
+                
                 {/* Mute Button */}
                 <button
                   onClick={() => microphoneToggle.toggle()}
                   disabled={microphoneToggle.pending}
-                  className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
+                  className={`p-2 rounded transition-all ${
                     microphoneToggle.enabled
-                      ? 'bg-green-600/20 text-green-400 border border-green-500/50 hover:bg-green-600/30'
-                      : 'bg-red-600/20 text-red-400 border border-red-500/50 hover:bg-red-600/30'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      ? 'bg-green-600/20 text-green-400'
+                      : 'bg-red-600/20 text-red-400'
+                  } disabled:opacity-50`}
+                  title="Toggle microphone"
                 >
-                  {microphoneToggle.pending ? (
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  {microphoneToggle.enabled ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                     </svg>
-                  ) : microphoneToggle.enabled ? (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                      </svg>
-                      <span>Unmuted</span>
-                    </>
                   ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                      </svg>
-                      <span>Muted</span>
-                    </>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                    </svg>
                   )}
                 </button>
               </div>
             </div>
-            
-            {/* Audio Visualizer - 5 bars like LiveKit */}
-            <div className="bg-gray-900/50 border border-cyan-500/30 rounded-xl p-6 flex items-center justify-center gap-3 h-32 min-h-[128px]">
-              {/* User Microphone Visualizer */}
-              {micTrackRef ? (
-                <div className="flex flex-col items-center gap-2 flex-1">
-                  <div className="text-xs text-gray-400 mb-2">You</div>
-                  <div className="flex items-end justify-center gap-1 h-16">
-                    <BarVisualizer
-                      barCount={5}
-                      options={{ minHeight: 8 }}
-                      trackRef={micTrackRef}
-                      className="flex h-full items-end justify-center gap-1"
-                    >
-                      <span className="h-full w-2 origin-bottom rounded-full bg-gradient-to-t from-cyan-500 to-blue-500 transition-all duration-150" />
-                    </BarVisualizer>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-2 flex-1">
-                  <div className="text-xs text-gray-400 mb-2">You</div>
-                  <div className="flex items-end justify-center gap-1 h-16">
-                    {[...Array(5)].map((_, i) => (
-                      <div
-                        key={i}
-                        className="w-2 bg-gray-700/30 rounded-full"
-                        style={{ height: '8px' }}
-                      />
-                    ))}
-                  </div>
-                </div>
+          </div>
+
+          {/* Chat Messages */}
+          <div className="flex-1 overflow-y-auto p-6 bg-gray-900/30 scrollbar-thin scrollbar-thumb-cyan-500/30 scrollbar-track-gray-900/50">
+            {messages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                <svg className="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <p className="text-sm font-medium">Conversation will appear here</p>
+                <p className="text-xs mt-1 text-gray-500">Start speaking or type a message to begin</p>
+              </div>
+            ) : (
+              <ul className="space-y-1">
+                {messages.map((msg, idx) => {
+                  const prevMsg = idx > 0 ? messages[idx - 1] : null;
+                  const hideName = prevMsg !== null && 
+                                  prevMsg.from?.identity === msg.from?.identity && 
+                                  prevMsg.from?.isLocal === msg.from?.isLocal &&
+                                  (new Date(msg.timestamp).getTime() - new Date(prevMsg.timestamp).getTime()) < 60000;
+                  return (
+                    <ChatEntry key={msg.id} entry={msg} hideName={hideName} />
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </ul>
+            )}
+          </div>
+          
+          {/* Chat Input */}
+          <div className="bg-gray-800/50 border-t border-cyan-500/20 p-4">
+            <ChatInput onSend={handleSendMessage} disabled={!room} />
+          </div>
+        </div>
+
+        {/* Right Panel - SCREEN and CAMERA (split equally) */}
+        <div className="w-80 flex flex-col border-l border-cyan-500/20">
+          {/* SCREEN Section */}
+          <div className="flex-1 flex flex-col border-b border-cyan-500/20">
+            <div className="p-3 border-b border-cyan-500/20 flex items-center justify-between">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Screen</h3>
+              {isScreenShareEnabled && (
+                <button
+                  onClick={() => screenShareToggle.toggle(false)}
+                  className="text-gray-400 hover:text-red-400 transition-colors"
+                  title="Stop sharing"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               )}
-              
-              {/* Agent Audio Visualizer */}
-              {agentAudioTrack ? (
-                <div className="flex flex-col items-center gap-2 ml-4 pl-4 border-l border-cyan-500/30 flex-1">
-                  <div className="text-xs text-gray-400 mb-2">Nila</div>
-                  <div className="flex items-end justify-center gap-1 h-16">
-                    <BarVisualizer
-                      barCount={5}
-                      state={agentState}
-                      options={{ minHeight: 8 }}
-                      trackRef={agentAudioTrack}
-                      className="flex h-full items-end justify-center gap-1"
-                    >
-                      <span className="h-full w-2 origin-bottom rounded-full bg-gradient-to-t from-blue-500 to-cyan-500 transition-all duration-150" />
-                    </BarVisualizer>
-                  </div>
-                </div>
+            </div>
+            <div className="flex-1 bg-black flex items-center justify-center p-2">
+              {isScreenShareEnabled && screenShareTrack ? (
+                <VideoTrack
+                  trackRef={screenShareTrack}
+                  className="w-full h-full object-contain rounded"
+                />
               ) : (
-                <div className="flex flex-col items-center gap-2 ml-4 pl-4 border-l border-cyan-500/30 flex-1">
-                  <div className="text-xs text-gray-400 mb-2">Nila</div>
-                  <div className="flex items-end justify-center gap-1 h-16">
-                    {[...Array(5)].map((_, i) => (
-                      <div
-                        key={i}
-                        className="w-2 bg-gray-700/30 rounded-full"
-                        style={{ height: '8px' }}
-                      />
-                    ))}
-                  </div>
+                <div className="text-center text-gray-500">
+                  <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-xs">No screen share</p>
                 </div>
               )}
             </div>
           </div>
-        </div>
-
-        {/* Conversation History Section */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-gray-900/30">
-          <div className="max-w-4xl mx-auto w-full flex-1 flex flex-col p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold text-cyan-400 flex items-center gap-3">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                Interview Dialogue
-              </h3>
-              <div className="text-xs text-gray-400 bg-gray-800/50 px-3 py-1 rounded-full border border-cyan-500/20">
-                {messages.length} {messages.length === 1 ? 'message' : 'messages'}
-              </div>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto mb-4 p-6 bg-gray-800/50 rounded-xl border border-cyan-500/20 shadow-inner scrollbar-thin scrollbar-thumb-cyan-500/30 scrollbar-track-gray-900/50" style={{ maxHeight: 'calc(100vh - 500px)', minHeight: '300px' }}>
-              {messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                  <svg className="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          
+          {/* CAMERA Section */}
+          <div className="flex-1 flex flex-col">
+            <div className="p-3 border-b border-cyan-500/20 flex items-center justify-between">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Camera</h3>
+              {isCameraEnabled && cameraTrack && (
+                <div className="flex items-center gap-1 text-xs text-gray-400">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
-                  <p className="text-sm font-medium">Conversation will appear here</p>
-                  <p className="text-xs mt-1 text-gray-500">Start speaking or type a message to begin</p>
+                  <span>MacBook Air</span>
                 </div>
-              ) : (
-                <ul className="space-y-1">
-                  {messages.map((msg, idx) => {
-                    const prevMsg = idx > 0 ? messages[idx - 1] : null;
-                    const hideName = prevMsg !== null && 
-                                    prevMsg.from?.identity === msg.from?.identity && 
-                                    prevMsg.from?.isLocal === msg.from?.isLocal &&
-                                    (new Date(msg.timestamp).getTime() - new Date(prevMsg.timestamp).getTime()) < 60000; // Hide if same speaker within 1 minute
-                    return (
-                      <ChatEntry key={msg.id} entry={msg} hideName={hideName} />
-                    );
-                  })}
-                  <div ref={messagesEndRef} />
-                </ul>
               )}
             </div>
-            
-            <div className="bg-gray-800/50 rounded-xl border border-cyan-500/20 p-2">
-              <ChatInput onSend={handleSendMessage} disabled={!room} />
+            <div className="flex-1 bg-black flex items-center justify-center p-2">
+              {isCameraEnabled && cameraTrack ? (
+                <VideoTrack
+                  trackRef={cameraTrack}
+                  className="w-full h-full object-cover rounded"
+                />
+              ) : (
+                <div className="text-center text-gray-500">
+                  <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-xs">No camera</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
