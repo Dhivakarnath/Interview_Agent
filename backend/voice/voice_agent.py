@@ -12,8 +12,10 @@ from datetime import datetime
 from typing import Optional
 from dotenv import load_dotenv
 
-from livekit.agents import Agent, AgentSession, JobContext, JobProcess, ChatContext
+from livekit.agents import Agent, AgentSession, JobContext, JobProcess, ChatContext, ChatMessage
 from livekit.agents import RoomInputOptions, WorkerOptions, cli
+from livekit.agents import get_job_context
+from livekit import rtc
 from livekit.plugins import noise_cancellation, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from livekit.plugins import aws, elevenlabs, deepgram
@@ -35,7 +37,7 @@ console = logging.getLogger("console")
 
 
 class InterviewAssistant(Agent):
-    """Interview practice assistant agent"""
+    """Interview practice assistant agent with video frame sampling"""
     
     def __init__(self, chat_ctx: ChatContext, rag_tool=None) -> None:
         tools = []
@@ -47,6 +49,93 @@ class InterviewAssistant(Agent):
             instructions=INTERVIEW_CONDUCTOR_PROMPT,
             tools=tools,
         )
+        
+        # Video frame sampling state
+        self._latest_camera_frame = None
+        self._latest_screen_frame = None
+        self._camera_stream = None
+        self._screen_stream = None
+        self._video_tasks = []
+    
+    async def on_enter(self):
+        """Called when agent enters the room - set up video streams"""
+        room = get_job_context().room
+        
+        # Find video tracks from remote participants
+        for participant in room.remote_participants.values():
+            for publication in participant.track_publications.values():
+                if publication.track and publication.track.kind == rtc.TrackKind.KIND_VIDEO:
+                    self._create_video_stream(publication.track, publication.source)
+        
+        # Watch for new video tracks
+        def on_track_subscribed(track: rtc.Track, publication: rtc.TrackPublication, participant: rtc.RemoteParticipant):
+            if track.kind == rtc.TrackKind.KIND_VIDEO:
+                self._create_video_stream(track, publication.source)
+        
+        room.on("track_subscribed", on_track_subscribed)
+    
+    def _create_video_stream(self, track: rtc.Track, source: int):
+        """Create a video stream to sample frames from a track"""
+        SOURCE_CAMERA = 1
+        SOURCE_SCREEN_SHARE = 3
+        
+        # Close existing stream if switching sources
+        if source == SOURCE_CAMERA:
+            if self._camera_stream is not None:
+                self._camera_stream.close()
+            self._camera_stream = rtc.VideoStream(track)
+            logger.info("✅ Created camera video stream")
+            
+            async def read_camera_stream():
+                async for event in self._camera_stream:
+                    # Store the latest frame for use in chat context
+                    self._latest_camera_frame = event.frame
+            
+            task = asyncio.create_task(read_camera_stream())
+            task.add_done_callback(lambda t: self._video_tasks.remove(t) if t in self._video_tasks else None)
+            self._video_tasks.append(task)
+            
+        elif source == SOURCE_SCREEN_SHARE:
+            if self._screen_stream is not None:
+                self._screen_stream.close()
+            self._screen_stream = rtc.VideoStream(track)
+            logger.info("✅ Created screen share video stream")
+            
+            async def read_screen_stream():
+                async for event in self._screen_stream:
+                    # Store the latest frame for use in chat context
+                    self._latest_screen_frame = event.frame
+            
+            task = asyncio.create_task(read_screen_stream())
+            task.add_done_callback(lambda t: self._video_tasks.remove(t) if t in self._video_tasks else None)
+            self._video_tasks.append(task)
+    
+    async def on_user_turn_completed(self, turn_ctx: ChatContext, new_message: ChatMessage) -> None:
+        """Called when user completes a turn - add latest video frames to context"""
+        # Import ImageContent here to avoid import issues
+        from livekit.agents.llm import ImageContent
+        
+        # Add camera frame if available
+        if self._latest_camera_frame:
+            try:
+                new_message.content.append(
+                    ImageContent(image=self._latest_camera_frame)
+                )
+                logger.info("📷 Added camera frame to chat context")
+                self._latest_camera_frame = None  # Clear after adding
+            except Exception as e:
+                logger.warning(f"Could not add camera frame to context: {e}")
+        
+        # Add screen share frame if available
+        if self._latest_screen_frame:
+            try:
+                new_message.content.append(
+                    ImageContent(image=self._latest_screen_frame)
+                )
+                logger.info("🖥️ Added screen share frame to chat context")
+                self._latest_screen_frame = None  # Clear after adding
+            except Exception as e:
+                logger.warning(f"Could not add screen share frame to context: {e}")
 
 
 def prewarm(proc: JobProcess):
@@ -305,6 +394,21 @@ Use this job description to:
     else:
         logger.warning("⚠️ No job description available - agent will conduct general interview practice")
     
+    # Add video analysis capabilities context
+    initial_ctx.add_message(
+        role="system",
+        content="""VIDEO ANALYSIS CAPABILITIES:
+- If the candidate enables their camera, you can analyze their body language, posture, eye contact, and facial expressions
+- If the candidate shares their screen, you can analyze their code and provide coding guidance
+- When video is active, PROACTIVELY provide feedback during the conversation - don't wait to be asked
+- Integrate video feedback naturally into your responses - weave it in organically
+- Be encouraging and constructive - help them improve, not criticize
+- Mention these capabilities naturally: "I can see you're [observation]. [Suggestion]."
+- For coding: "I notice in your code [observation]. [Suggestion]. [Teaching point]."
+- Remember: You're their teacher and coach - use video analysis to help them succeed!"""
+    )
+    logger.info("✅ Video analysis capabilities added to prompt context")
+    
     # Add context about resume RAG tool if available
     if user_name and _GLOBAL_RAG_SERVICE:
         initial_ctx.add_message(
@@ -329,6 +433,65 @@ Use this job description to:
     )
     
     logger.info("✅ Interview session started")
+    
+    # TrackSource enum values (using integers to avoid enum name issues)
+    # Based on LiveKit protocol: Camera=1, Microphone=2, ScreenShare=3
+    SOURCE_CAMERA = 1
+    SOURCE_SCREEN_SHARE = 3
+    
+    # Check for video tracks from remote participants and subscribe
+    def check_and_subscribe_video_tracks():
+        """Check for camera and screen share tracks from remote participants and subscribe"""
+        has_camera = False
+        has_screen_share = False
+        
+        for participant in ctx.room.remote_participants.values():
+            for publication in participant.track_publications.values():
+                if publication.kind == rtc.TrackKind.KIND_VIDEO:
+                    source = publication.source
+                    # Subscribe to the publication so agent can receive video
+                    # In LiveKit, tracks are automatically subscribed when published, but we ensure subscription
+                    if not publication.subscribed:
+                        try:
+                            ctx.room.local_participant.set_subscribed(publication.sid, True)
+                            logger.info(f"✅ Subscribed to video track from {participant.identity}, source={source}")
+                        except Exception as e:
+                            logger.warning(f"Could not subscribe to video track: {e}")
+                    else:
+                        logger.info(f"✅ Video track already subscribed from {participant.identity}, source={source}")
+                    
+                    # Check source type using integer comparison
+                    if source == SOURCE_CAMERA:
+                        has_camera = True
+                        logger.info(f"✅ Camera track detected from {participant.identity}")
+                    elif source == SOURCE_SCREEN_SHARE:
+                        has_screen_share = True
+                        logger.info(f"✅ Screen share track detected from {participant.identity}")
+        
+        return has_camera, has_screen_share
+    
+    # Check initial tracks and subscribe
+    has_camera, has_screen_share = check_and_subscribe_video_tracks()
+    
+    # Note: Video track subscription is now handled in InterviewAssistant.on_enter()
+    # The agent will automatically set up video streams when it enters the room
+    
+    # Update initial context if video is already available
+    if has_camera or has_screen_share:
+        video_context = "The candidate has "
+        if has_camera:
+            video_context += "enabled their camera"
+        if has_camera and has_screen_share:
+            video_context += " and "
+        if has_screen_share:
+            video_context += "started screen sharing"
+        video_context += ". You can now see their video feed and provide real-time feedback."
+        
+        initial_ctx.add_message(
+            role="system",
+            content=video_context
+        )
+        logger.info(f"✅ Video context updated: camera={has_camera}, screen_share={has_screen_share}")
     
     greeting = await _generate_personalized_greeting(llm_instance, user_name)
     await session.say(greeting)

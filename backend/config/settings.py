@@ -12,13 +12,13 @@ class Config:
     """Central configuration class"""
     
     # AWS / Bedrock Configuration
-    AWS_REGION = os.getenv("AWS_REGION", "")
+    AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
     AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
     AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     AWS_SESSION_TOKEN = os.getenv("AWS_SESSION_TOKEN", "")
     
     # Bedrock Models
-    BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
+    BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
     BEDROCK_EMBEDDING_MODEL_ID = os.getenv(
         "BEDROCK_EMBEDDING_MODEL_ID", 
         "amazon.titan-embed-text-v2:0"
