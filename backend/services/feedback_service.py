@@ -18,11 +18,10 @@ class FeedbackService:
     def __init__(self):
         aws_config = Config.get_aws_config()
         self.bedrock = boto3.client("bedrock-runtime", **aws_config)
-        # Use Claude Haiku for feedback generation (same as main LLM)
         self.model_id = Config.BEDROCK_MODEL_ID
         if not self.model_id:
-            logger.warning("⚠️ BEDROCK_MODEL_ID not configured - feedback generation will fail")
-        logger.info(f"✅ FeedbackService initialized with model: {self.model_id}")
+            logger.warning("BEDROCK_MODEL_ID not configured - feedback generation will fail")
+        logger.info(f"FeedbackService initialized with model: {self.model_id}")
     
     async def generate_feedback(
         self,
@@ -46,10 +45,8 @@ class FeedbackService:
             Dictionary containing structured feedback with sections, scores, and recommendations
         """
         try:
-            # Build conversation context from transcript
             conversation_text = self._build_conversation_text(transcript)
             
-            # Create feedback prompt
             feedback_prompt = self._create_feedback_prompt(
                 user_name=user_name,
                 conversation_text=conversation_text,
@@ -57,17 +54,14 @@ class FeedbackService:
                 interview_mode=interview_mode
             )
             
-            # Generate feedback using Bedrock
             feedback_text = await self._generate_with_bedrock(feedback_prompt)
-            
-            # Parse and structure feedback
             structured_feedback = self._parse_feedback(feedback_text, session_id, user_name)
             
-            logger.info(f"✅ Feedback generated for session: {session_id}")
+            logger.info(f"Feedback generated for session: {session_id}")
             return structured_feedback
             
         except Exception as e:
-            logger.error(f"❌ Error generating feedback: {e}", exc_info=True)
+            logger.error(f"Error generating feedback: {e}", exc_info=True)
             raise
     
     def _build_conversation_text(self, transcript: List[Dict[str, Any]]) -> str:
@@ -164,14 +158,12 @@ Format your response clearly with proper sections and bullet points. Be construc
             
             response_body = json.loads(response.get("body").read())
             
-            # Extract text from response
             if "content" in response_body:
                 content = response_body["content"]
                 if isinstance(content, list) and len(content) > 0:
                     if "text" in content[0]:
                         return content[0]["text"]
             
-            # Fallback: try to get text directly
             return str(response_body)
             
         except Exception as e:
@@ -198,20 +190,16 @@ Format your response clearly with proper sections and bullet points. Be construc
         lines = feedback_text.split("\n")
         
         for line in lines:
-            # Check if line is a section header
             if line.strip().startswith("##"):
-                # Save previous section
                 if current_section:
                     sections[current_section] = "\n".join(current_content).strip()
                 
-                # Start new section
                 current_section = line.strip().replace("##", "").strip()
                 current_content = []
             else:
                 if current_section:
                     current_content.append(line)
         
-        # Save last section
         if current_section:
             sections[current_section] = "\n".join(current_content).strip()
         

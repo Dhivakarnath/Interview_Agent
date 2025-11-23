@@ -1,22 +1,19 @@
 """
 FastAPI Backend for Interview Practice Agent
-Handles API endpoints for frontend integration
 """
 
 import logging
 import os
 import uuid
+import asyncio
+import json
 from datetime import datetime, timezone
 from typing import Dict, Optional, Any
-
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
-import uuid
-import asyncio
-import json
 
 from config.settings import Config
 from services.rag_service import RAGService
@@ -24,7 +21,6 @@ from services.document_parser import DocumentParser
 from models.feedback import FeedbackModel
 from config.database import get_database
 
-# Global RAG service instance
 rag_service = RAGService()
 
 logging.basicConfig(
@@ -37,43 +33,35 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown"""
-    logger.info("🚀 Starting backend initialization...")
+    logger.info("Starting backend initialization...")
     
-    # Initialize MongoDB connection at startup
     try:
         from config.database import get_database, DatabaseConfig
         from models.feedback import FeedbackModel
         
-        # Test MongoDB connection
         db = await get_database()
         collection = db[FeedbackModel.COLLECTION_NAME]
-        
-        # Create indexes
         FeedbackModel.create_indexes(collection)
         
-        # Verify existing data
         count = await collection.count_documents({})
-        logger.info(f"✅ MongoDB connected successfully: {DatabaseConfig.MONGODB_URL}")
-        logger.info(f"✅ Database: {DatabaseConfig.MONGODB_DB_NAME}")
-        logger.info(f"✅ Collection: {FeedbackModel.COLLECTION_NAME}")
-        logger.info(f"✅ Existing feedback documents: {count}")
-        logger.info(f"✅ Feedback collection indexes created")
+        logger.info(f"MongoDB connected: {DatabaseConfig.MONGODB_URL}")
+        logger.info(f"Database: {DatabaseConfig.MONGODB_DB_NAME}")
+        logger.info(f"Collection: {FeedbackModel.COLLECTION_NAME}")
+        logger.info(f"Existing feedback documents: {count}")
     except Exception as e:
-        logger.warning(f"⚠️ MongoDB connection failed at startup: {e}")
-        logger.warning("⚠️ Feedback features will not be available until MongoDB is connected")
-        logger.warning("⚠️ The server will attempt to reconnect on the next API call")
+        logger.warning(f"MongoDB connection failed at startup: {e}")
+        logger.warning("Feedback features will not be available until MongoDB is connected")
     
-    logger.info("✅ Backend initialized successfully")
+    logger.info("Backend initialized successfully")
     yield
     
-    # Cleanup on shutdown
     try:
         from config.database import close_database
         await close_database()
     except Exception as e:
         logger.warning(f"Error closing database connection: {e}")
     
-    logger.info("✅ Backend shutdown complete")
+    logger.info("Backend shutdown complete")
 
 
 app = FastAPI(
@@ -91,7 +79,6 @@ app.add_middleware(
 )
 
 active_sessions: Dict[str, Dict] = {}
-# Store pending resumes (resume_id -> resume_text) for indexing when user_name is available
 pending_resumes: Dict[str, str] = {}
 
 
@@ -156,7 +143,7 @@ def generate_livekit_token(room_name: str, participant_identity: str, participan
         ))
         
         jwt_token = token.to_jwt()
-        logger.info(f"✅ Generated token for {participant_identity} in room {room_name}")
+        logger.info(f"Generated token for {participant_identity} in room {room_name}")
         
         return jwt_token
     except Exception as e:
@@ -179,30 +166,22 @@ async def upload_resume(
         if not file.filename:
             raise HTTPException(status_code=400, detail="No file provided")
         
-        # Read file content
         file_content = await file.read()
-        
-        # Parse document
         parser = DocumentParser()
         resume_text = parser.parse_document(file_content, file.filename)
         
         if not resume_text:
             raise HTTPException(status_code=400, detail="Could not extract text from resume")
         
-        # Generate resume ID
         resume_id = str(uuid.uuid4())
         
-        # If user_name is provided, index immediately. Otherwise, store for later indexing
         if user_name:
-            # Index resume using user_name directly
             asyncio.create_task(rag_service.index_resume(user_name, resume_text, resume_id))
-            logger.info(f"✅ Resume uploaded and indexing started: resume_id={resume_id}, user_name={user_name}")
+            logger.info(f"Resume uploaded and indexing started: resume_id={resume_id}, user_name={user_name}")
             message = "Resume uploaded successfully. Indexing in progress..."
         else:
-            # Store resume text temporarily (in memory) for indexing when room is created
-            # In production, you might want to store this in a database or cache
             pending_resumes[resume_id] = resume_text
-            logger.info(f"✅ Resume uploaded (pending indexing): resume_id={resume_id}, user_name will be provided later")
+            logger.info(f"Resume uploaded (pending indexing): resume_id={resume_id}")
             message = "Resume uploaded successfully. It will be indexed when you start the interview session."
         
         return ResumeUploadResponse(
@@ -231,18 +210,14 @@ async def create_interview_room(request: InterviewRoomRequest):
         user_name = request.user_name or "Candidate"
         identity = f"user-{session_id[:8]}"
         
-        # If resume_id is provided and resume is pending (uploaded without user_name), index it now
         if request.resume_id and request.resume_id in pending_resumes:
             resume_text = pending_resumes.pop(request.resume_id)
             asyncio.create_task(rag_service.index_resume(user_name, resume_text, request.resume_id))
-            logger.info(f"✅ Indexing pending resume: resume_id={request.resume_id}, user_name={user_name}")
+            logger.info(f"Indexing pending resume: resume_id={request.resume_id}, user_name={user_name}")
         
-        # Set user context in RAG service using user_name directly
-        # Job description will be passed directly in prompts, not indexed
         rag_service.set_user_context(user_name, None)
-        logger.info(f"✅ Set RAG context: user_name={user_name}")
+        logger.info(f"Set RAG context: user_name={user_name}")
         
-        # Prepare metadata for token
         token_metadata = {
             "user_name": user_name,
             "session_id": session_id,
@@ -251,14 +226,14 @@ async def create_interview_room(request: InterviewRoomRequest):
         
         if request.job_description:
             token_metadata["job_description"] = request.job_description
-            logger.info(f"📄 Job description included in token metadata (length: {len(request.job_description)} chars)")
+            logger.info(f"Job description included in token metadata (length: {len(request.job_description)} chars)")
         else:
-            logger.info("📄 No job description provided")
+            logger.info("No job description provided")
         
         if request.resume_id:
             token_metadata["resume_id"] = request.resume_id
         
-        logger.info(f"🎯 Interview mode: {request.mode or 'practice'}")
+        logger.info(f"Interview mode: {request.mode or 'practice'}")
         
         jwt_token = generate_livekit_token(
             room_name=room_name,
@@ -354,7 +329,7 @@ async def health():
 
 @app.get("/api/feedback/user")
 async def get_all_feedback_fallback(limit: int = 100):
-    """Fallback endpoint for /api/feedback/user without user_name - returns all feedbacks"""
+    """Get all feedback entries"""
     try:
         db = await get_database()
         if db is None:

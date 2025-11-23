@@ -23,7 +23,7 @@ class VideoAnalysisService:
         aws_config = Config.get_aws_config()
         self.bedrock = boto3.client("bedrock-runtime", **aws_config)
         self.model_id = Config.BEDROCK_MODEL_ID
-        logger.info("✅ VideoAnalysisService initialized")
+        logger.info("VideoAnalysisService initialized")
     
     def _image_to_base64(self, image_data: bytes) -> str:
         """Convert image bytes to base64 string"""
@@ -41,10 +41,8 @@ class VideoAnalysisService:
             Analysis result as string, or None if analysis fails
         """
         try:
-            # Convert image to base64
             base64_image = self._image_to_base64(image_data)
             
-            # Prepare prompt for body language analysis
             prompt = """Analyze this image of a candidate during an interview practice session. 
 Focus on:
 1. Posture and body positioning
@@ -97,19 +95,18 @@ Example format: "I notice [observation]. [Suggestion]. [Encouragement]."
             
             response_body = json.loads(response.get('body').read())
             
-            # Extract text from response
             if "content" in response_body and len(response_body["content"]) > 0:
                 content = response_body["content"][0]
                 if content.get("type") == "text":
                     analysis = content.get("text", "").strip()
-                    logger.info(f"✅ Body language analysis completed: {analysis[:100]}...")
+                    logger.info(f"Body language analysis completed: {analysis[:100]}...")
                     return analysis
             
-            logger.warning("⚠️ No analysis text found in Bedrock response")
+            logger.warning("No analysis text found in Bedrock response")
             return None
             
         except Exception as e:
-            logger.error(f"❌ Error analyzing body language: {e}")
+            logger.error(f"Error analyzing body language: {e}")
             return None
     
     async def analyze_code(self, image_data: bytes, context: Optional[str] = None) -> Optional[str]:
@@ -124,10 +121,8 @@ Example format: "I notice [observation]. [Suggestion]. [Encouragement]."
             Analysis result as string, or None if analysis fails
         """
         try:
-            # Convert image to base64
             base64_image = self._image_to_base64(image_data)
             
-            # Prepare prompt for code analysis
             prompt = """Analyze this code screenshot from a candidate's screen during an interview practice session.
 Focus on:
 1. Code quality and structure
@@ -180,18 +175,17 @@ Example format: "I see you're [approach]. [Suggestion]. [Teaching point]."
             
             response_body = json.loads(response.get('body').read())
             
-            # Extract text from response
             if "content" in response_body and len(response_body["content"]) > 0:
                 content = response_body["content"][0]
                 if content.get("type") == "text":
                     analysis = content.get("text", "").strip()
-                    logger.info(f"✅ Code analysis completed: {analysis[:100]}...")
+                    logger.info(f"Code analysis completed: {analysis[:100]}...")
                     return analysis
             
-            logger.warning("⚠️ No analysis text found in Bedrock response")
+            logger.warning("No analysis text found in Bedrock response")
             return None
             
         except Exception as e:
-            logger.error(f"❌ Error analyzing code: {e}")
+            logger.error(f"Error analyzing code: {e}")
             return None
 

@@ -24,38 +24,28 @@ import AnalysisView from '../components/AnalysisView';
 
 type TabType = 'practice' | 'mock-interview' | 'analysis';
 
-// Helper function to clean markdown and format text professionally
 function cleanText(text: string): string {
   if (!text) return '';
   
-  // Remove markdown formatting
   let cleaned = text
-    // Remove bold/italic markers
     .replace(/\*\*\*(.*?)\*\*\*/g, '$1')
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/__(.*?)__/g, '$1')
     .replace(/_(.*?)_/g, '$1')
-    // Remove code blocks
     .replace(/```[\s\S]*?```/g, '')
     .replace(/`([^`]+)`/g, '$1')
-    // Remove links but keep text
     .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
-    // Remove headers
     .replace(/^#{1,6}\s+/gm, '')
-    // Remove list markers
     .replace(/^[\*\-\+]\s+/gm, '')
     .replace(/^\d+\.\s+/gm, '')
-    // Remove blockquotes
     .replace(/^>\s+/gm, '')
-    // Clean up extra whitespace
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   
   return cleaned;
 }
 
-// Helper function to convert transcription to chat message
 function transcriptionToChatMessage(
   textStream: TextStreamData,
   room: Room
@@ -74,20 +64,16 @@ function transcriptionToChatMessage(
   };
 }
 
-// Chat Entry Component
 function ChatEntry({ entry, hideName }: { entry: ReceivedChatMessage; hideName?: boolean }) {
   const isUser = entry.from?.isLocal ?? false;
-  // Use "Nila" as agent name, fallback to name or identity
   let displayName = isUser ? 'You' : 'Nila';
   if (isUser && entry.from?.name) {
     displayName = entry.from.name;
   } else if (!isUser) {
-    // Always show "Nila" for agent, regardless of identity
     displayName = 'Nila';
   }
   const time = new Date(entry.timestamp);
   
-  // Clean the message text to remove any markdown
   const cleanedMessage = cleanText(entry.message);
   
   return (

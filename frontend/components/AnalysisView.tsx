@@ -2,26 +2,19 @@
 
 import { useState, useEffect } from 'react';
 
-// Helper function to clean markdown and format text professionally
 function cleanMarkdown(text: string): string {
   if (!text) return '';
   
-  // Remove markdown formatting
   let cleaned = text
-    // Remove bold/italic markers
     .replace(/\*\*\*(.*?)\*\*\*/g, '$1')
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/__(.*?)__/g, '$1')
     .replace(/_(.*?)_/g, '$1')
-    // Remove code blocks
     .replace(/```[\s\S]*?```/g, '')
     .replace(/`([^`]+)`/g, '$1')
-    // Remove links but keep text
     .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
-    // Remove headers (but keep the text)
     .replace(/^#{1,6}\s+(.+)$/gm, '$1')
-    // Clean up extra whitespace
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   
@@ -55,7 +48,6 @@ export default function AnalysisView({ userName }: AnalysisViewProps) {
   const applyFilters = (feedbacksToFilter: Feedback[] = allFeedbacks) => {
     let filtered = feedbacksToFilter;
     
-    // Apply search filter
     if (searchQuery) {
       filtered = filtered.filter(feedback =>
         feedback.session_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -64,14 +56,12 @@ export default function AnalysisView({ userName }: AnalysisViewProps) {
       );
     }
     
-    // Apply interview mode filter
     if (interviewModeFilter !== 'all') {
       filtered = filtered.filter(feedback => feedback.interview_mode === interviewModeFilter);
     }
     
     setFeedbacks(filtered);
     
-    // Update selected feedback if it's still in filtered list
     if (selectedFeedback && !filtered.find(f => f._id === selectedFeedback._id)) {
       setSelectedFeedback(filtered.length > 0 ? filtered[0] : null);
     } else if (!selectedFeedback && filtered.length > 0) {
@@ -86,7 +76,6 @@ export default function AnalysisView({ userName }: AnalysisViewProps) {
       }
       setError(null);
       
-      // Build URL - use /api/feedback/user endpoint if userName is empty, otherwise use /api/feedback/user/{userName}
       const url = userName && userName.trim() !== '' 
         ? `http://localhost:8000/api/feedback/user/${encodeURIComponent(userName)}`
         : `http://localhost:8000/api/feedback/user`;
@@ -94,12 +83,11 @@ export default function AnalysisView({ userName }: AnalysisViewProps) {
       const response = await fetch(url);
       
       if (!response.ok) {
-        // If it's a 404 or 503, show a user-friendly message instead of error
         if (response.status === 404 || response.status === 503) {
           setAllFeedbacks([]);
           applyFilters([]);
           if (!silent) {
-            setError(null); // Don't show error, just show "no feedbacks available"
+            setError(null);
           }
           return;
         }
@@ -111,17 +99,15 @@ export default function AnalysisView({ userName }: AnalysisViewProps) {
       setAllFeedbacks(feedbacks);
       applyFilters(feedbacks);
       
-      // Select the most recent feedback by default if none selected
       if (!selectedFeedback && feedbacks.length > 0) {
         setSelectedFeedback(feedbacks[0]);
       }
     } catch (err) {
       console.error('Error fetching feedbacks:', err);
-      // On error, set empty array and don't show error - just show "no feedbacks available"
       setAllFeedbacks([]);
       applyFilters([]);
       if (!silent) {
-        setError(null); // Don't show error message, UI will show "no feedbacks available"
+        setError(null);
       }
     } finally {
       if (!silent) {
@@ -130,18 +116,15 @@ export default function AnalysisView({ userName }: AnalysisViewProps) {
     }
   };
 
-  // Fetch feedbacks when component mounts or userName changes
   useEffect(() => {
     fetchFeedbacks(false);
   }, [userName]);
 
-  // Apply filters when search or filter changes
   useEffect(() => {
     applyFilters();
   }, [searchQuery, interviewModeFilter, allFeedbacks]);
 
   const downloadFeedback = (feedback: Feedback) => {
-    // Build content with cleaned markdown
     let content = `Interview Feedback Report
 Generated: ${new Date(feedback.created_at).toLocaleString()}
 Session ID: ${feedback.session_id}
@@ -150,7 +133,6 @@ Interview Mode: ${feedback.interview_mode}
 
 `;
 
-    // Add sections with cleaned markdown
     if (feedback.sections && Object.keys(feedback.sections).length > 0) {
       Object.entries(feedback.sections).forEach(([sectionTitle, sectionContent]) => {
         const cleanedTitle = cleanMarkdown(sectionTitle);
@@ -158,11 +140,9 @@ Interview Mode: ${feedback.interview_mode}
         content += `\n${cleanedTitle}\n${'='.repeat(cleanedTitle.length)}\n${cleanedContent}\n`;
       });
     } else if (feedback.feedback_text) {
-      // Fallback to feedback_text if sections are not available
       content += cleanMarkdown(feedback.feedback_text);
     }
 
-    // Add job description if available
     if (feedback.job_description) {
       content += `\n\n${'='.repeat(50)}\nJob Description\n${'='.repeat(50)}\n${cleanMarkdown(feedback.job_description)}\n`;
     }
@@ -222,7 +202,6 @@ Interview Mode: ${feedback.interview_mode}
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Header with Search and Refresh */}
       <div className="bg-gray-800/50 border-b border-cyan-500/20 px-6 py-4">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -244,7 +223,6 @@ Interview Mode: ${feedback.interview_mode}
           </button>
         </div>
 
-        {/* Search and Filters */}
         <div className="flex gap-4">
           <div className="relative flex-1">
             <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

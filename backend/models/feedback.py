@@ -22,7 +22,6 @@ class FeedbackModel:
             IndexModel([("created_at", -1)]),
         ]
         collection.create_indexes(indexes)
-        print("✅ Feedback collection indexes created")
     
     @staticmethod
     def create_feedback_document(

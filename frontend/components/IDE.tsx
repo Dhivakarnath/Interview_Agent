@@ -46,7 +46,6 @@ def example_function():
 
   return (
     <div className="flex flex-col h-full bg-gray-900 border border-cyan-500/20 rounded-lg overflow-hidden">
-      {/* IDE Header */}
       <div className="flex items-center justify-between p-3 bg-gray-800/50 border-b border-cyan-500/20">
         <div className="flex items-center gap-3">
           <h3 className="text-sm font-semibold text-gray-300">Code Editor</h3>
@@ -79,7 +78,6 @@ def example_function():
         </div>
       </div>
 
-      {/* Monaco Editor */}
       <div className="flex-1 overflow-hidden">
         <Editor
           height="100%"
@@ -106,9 +104,8 @@ def example_function():
         />
       </div>
 
-      {/* Footer Info */}
       <div className="p-2 bg-gray-800/30 border-t border-cyan-500/20 text-xs text-gray-400">
-        💡 Tip: Write your code here and click "Send Code"
+        Tip: Write your code here and click "Send Code"
       </div>
     </div>
   );

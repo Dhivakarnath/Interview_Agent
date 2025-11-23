@@ -13,6 +13,7 @@ import {
   useRemoteParticipants,
   VideoTrack,
   useTracks,
+  useChat,
   type TrackReference,
 } from '@livekit/components-react';
 import { Room, RoomEvent, Track } from 'livekit-client';
@@ -123,21 +124,6 @@ export default function MockInterviewView({
     }
   };
 
-  const handleSendCode = (code: string, language: string) => {
-    // In mock interview mode, code is sent via data channel
-    if (room) {
-      const codeMessage = `Here's my ${language} code:\n\`\`\`${language}\n${code}\n\`\`\`\n\nPlease review this code.`;
-      try {
-        room.localParticipant.publishData(
-          new TextEncoder().encode(JSON.stringify({ type: 'code', code, language, message: codeMessage })),
-          { reliable: true }
-        );
-      } catch (err) {
-        console.error('Error sending code:', err);
-      }
-    }
-  };
-
   const disconnect = async () => {
     if (room) {
       room.disconnect();
@@ -231,7 +217,7 @@ export default function MockInterviewView({
                         <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        <p className="text-sm text-green-400">✅ {resumeFile.name} uploaded</p>
+                        <p className="text-sm text-green-400">{resumeFile.name} uploaded</p>
                         <button
                           onClick={() => {
                             setResumeFile(null);
@@ -334,7 +320,6 @@ export default function MockInterviewView({
     <RoomContext.Provider value={room}>
       <MockInterviewActiveView 
         room={room}
-        handleSendCode={handleSendCode}
         disconnect={disconnect}
       />
     </RoomContext.Provider>
@@ -343,18 +328,22 @@ export default function MockInterviewView({
 
 function MockInterviewActiveView({ 
   room: roomProp, 
-  handleSendCode,
   disconnect 
 }: { 
   room: Room; 
-  handleSendCode: (code: string, language: string) => void;
   disconnect: () => void;
 }) {
   const { localParticipant } = useLocalParticipant();
   const room = useRoomContext() || roomProp;
+  const chat = useChat();
   const microphoneToggle = useTrackToggle({ source: Track.Source.Microphone });
   const cameraToggle = useTrackToggle({ source: Track.Source.Camera });
   const screenShareToggle = useTrackToggle({ source: Track.Source.ScreenShare });
+
+  const handleSendCode = (code: string, language: string) => {
+    const codeMessage = `Here's my ${language} code:\n\`\`\`${language}\n${code}\n\`\`\`\n\nPlease review this code.`;
+    chat.send(codeMessage);
+  };
 
   // Get screen share track - check both local and remote participants
   const allTracks = useTracks([Track.Source.ScreenShare], { onlySubscribed: false });
@@ -434,7 +423,7 @@ function MockInterviewActiveView({
           await localParticipant.setCameraEnabled(true);
           // Note: Screen share needs to be started manually by user via browser prompt
           // We can't auto-enable it, but we can prompt or ensure it's ready
-          console.log("✅ Microphone and camera enabled for mock interview");
+          console.log("Microphone and camera enabled for mock interview");
         } catch (error) {
           console.error("Error enabling tracks:", error);
         }
