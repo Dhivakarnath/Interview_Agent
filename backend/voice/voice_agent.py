@@ -258,9 +258,9 @@ async def _extract_user_name(ctx: JobContext) -> Optional[str]:
 
 async def _generate_personalized_greeting(llm_instance, user_name: Optional[str]) -> str:
     if user_name:
-        return f"Hello {user_name}! I'm Nila, your AI interview practice partner. I'm here to help you prepare for your interview. Let's begin!"
+        return f"Hello {user_name}! I'm Nila, your AI interview practice partner. I'm here to help you prepare for your interview. To get the most out of our practice session, I'd recommend turning on your camera so I can help you with body language and presence. Also, if you'd like to practice coding, you can share your screen or use the Code Editor feature - just click 'Code Editor' in the sidebar! Let's begin!"
     else:
-        return "Hello! I'm Nila, your AI interview practice partner. I'm here to help you prepare for your interview. Let's begin!"
+        return "Hello! I'm Nila, your AI interview practice partner. I'm here to help you prepare for your interview. To get the most out of our practice session, I'd recommend turning on your camera so I can help you with body language and presence. Also, if you'd like to practice coding, you can share your screen or use the Code Editor feature - just click 'Code Editor' in the sidebar! Let's begin!"
 
 
 async def entrypoint(ctx: JobContext):
@@ -397,15 +397,23 @@ Use this job description to:
     # Add video analysis capabilities context
     initial_ctx.add_message(
         role="system",
-        content="""VIDEO ANALYSIS CAPABILITIES:
-- If the candidate enables their camera, you can analyze their body language, posture, eye contact, and facial expressions
-- If the candidate shares their screen, you can analyze their code and provide coding guidance
+        content="""VIDEO ANALYSIS CAPABILITIES AND PROACTIVE GUIDANCE:
+- PROACTIVELY suggest features to candidates:
+  * Early in conversation: "I'd love to help you with your body language! Would you like to turn on your camera so I can give you real-time feedback?"
+  * When discussing coding: "For coding practice, you can share your screen and I'll help analyze your code, or use the Code Editor feature - just click 'Code Editor' in the sidebar!"
+  * If camera not enabled: "I notice you haven't enabled your camera yet - would you like to turn it on? I can provide real-time feedback on your body language!"
+- If the candidate enables their camera, AUTOMATICALLY analyze their body language, posture, eye contact, and facial expressions
+- When camera is enabled, acknowledge it: "Great! I can see you now. I'll provide real-time feedback on your body language throughout our conversation."
+- If the candidate shares their screen, AUTOMATICALLY analyze their code and provide coding guidance
+- When screen share is enabled, acknowledge it: "Perfect! I can see your screen now. I'll help analyze your code and provide real-time guidance as you work!"
+- When code is sent via IDE, acknowledge it: "Great! I received your code. Let me analyze it and we can discuss it together!"
 - When video is active, PROACTIVELY provide feedback during the conversation - don't wait to be asked
 - Integrate video feedback naturally into your responses - weave it in organically
 - Be encouraging and constructive - help them improve, not criticize
 - Mention these capabilities naturally: "I can see you're [observation]. [Suggestion]."
 - For coding: "I notice in your code [observation]. [Suggestion]. [Teaching point]."
-- Remember: You're their teacher and coach - use video analysis to help them succeed!"""
+- Remember: You're their teacher and coach - use video analysis to help them succeed!
+- Be proactive in suggesting features - don't wait for them to ask!"""
     )
     logger.info("✅ Video analysis capabilities added to prompt context")
     
