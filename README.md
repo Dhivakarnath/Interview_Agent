@@ -6,11 +6,11 @@ An intelligent, real-time interview practice platform powered by AI that provide
 
 - [Features](#features)
 - [Screenshots](#screenshots)
-- [Technology Stack](#technology-stack)
 - [Architecture](#architecture)
+- [Design Decisions](#design-decisions)
+- [Technology Stack](#technology-stack)
 - [Setup Instructions](#setup-instructions)
 - [Architecture Notes](#architecture-notes)
-- [Design Decisions](#design-decisions)
 - [API Documentation](#api-documentation)
 - [Project Structure](#project-structure)
 
@@ -292,8 +292,8 @@ cd Interview_Agent
 ### Backend Setup
 
 1. **Navigate to backend directory**:
-   ```bash
-   cd backend
+```bash
+cd backend
    ```
 
 2. **Create and activate virtual environment**:
@@ -304,8 +304,8 @@ cd Interview_Agent
 
 3. **Install dependencies**:
    ```bash
-   pip install -r requirements.txt
-   ```
+pip install -r requirements.txt
+```
 
 4. **Configure environment variables**:
    ```bash
@@ -338,8 +338,8 @@ cd Interview_Agent
    ```
 
 7. **Start FastAPI server**:
-   ```bash
-   python main.py
+```bash
+python main.py
    # Server runs on http://localhost:8000
    ```
 
@@ -349,27 +349,27 @@ cd Interview_Agent
    ```
 
 9. **Start the voice agent** (in a separate terminal):
-   ```bash
+```bash
    cd backend
    source venv/bin/activate
-   python voice/voice_agent.py dev
-   ```
+python voice/voice_agent.py dev
+```
 
 ### Frontend Setup
 
 1. **Navigate to frontend directory**:
-   ```bash
-   cd frontend
+```bash
+cd frontend
    ```
 
 2. **Install dependencies**:
    ```bash
-   npm install
-   ```
+npm install
+```
 
 3. **Run development server**:
-   ```bash
-   npm run dev
+```bash
+npm run dev
    # Application runs on http://localhost:3000
    ```
 
@@ -791,6 +791,67 @@ This section documents the key architectural and technology decisions made durin
 - **Efficient Tool Invocation**: Tool calls happen within the same process, eliminating network overhead
 - **Streaming Architecture**: Real-time streaming enables immediate tool invocation without waiting for complete responses
 - **Low-Latency Agent Responses**: Combined with efficient RAG retrieval, enables natural, responsive conversations
+
+#### 2.4 Agentic Behavior & Persona Handling
+
+**Decision**: Implement dynamic prompt adaptation and intelligent handling based on user interaction patterns
+
+**Rationale**:
+To satisfy the "Intelligence & Adaptability" evaluation criteria, the agent needs to handle diverse user personas and edge cases gracefully. The system implements multiple mechanisms to adapt to different user behaviors and maintain natural conversation flow.
+
+**Implementation Details**:
+
+**The Silent User**:
+- **Background Monitoring Task**: Continuous silence detection running at 1-second intervals (`monitor_silence_continuously`)
+- **Multiple Detection Mechanisms**: 
+  - TTSMetrics events for reliable agent speech completion detection
+  - Wrapped `session.say()` function to track agent speech timestamps
+  - `on_agent_turn_completed()` as backup detection mechanism
+- **Progressive Prompting**: After 5 seconds of silence, the agent provides supportive nudges:
+  - "Are you still there? Please respond."
+  - "Can you hear me? Please answer the question."
+  - "I'm waiting for your response. Please proceed."
+- **Flag-Based Prevention**: `_is_checking_silence` flag prevents duplicate prompts
+- **Context-Aware**: Silence detection considers conversation context and interview mode
+
+**The Chatty User**:
+- **Prompt Engineering**: System prompts explicitly instruct the agent to handle chatty users:
+  - "Listen actively, acknowledge their points, gently redirect when needed"
+  - "If the candidate goes off-topic, gently redirect back to the interview focus"
+  - "Acknowledge briefly, then redirect: 'That's interesting. Let me ask you about...'"
+- **Steering Mechanism**: The agent acknowledges off-topic anecdotes but firmly steers conversation back to interview questions
+- **Natural Redirection**: Uses conversational techniques like "That's interesting. Let me ask you about..." to maintain focus
+- **Professional Boundaries**: Maintains interview structure while respecting user's communication style
+
+**The Confused User**:
+- **Patient Clarification**: System prompts instruct: "Be patient, provide clarification, offer examples"
+- **Proactive Support**: Agent offers examples and clarification when answers are unclear
+- **Follow-up Questions**: Asks probing questions like "Could you elaborate on that?" or "Can you give me an example?"
+- **Adaptive Communication**: Adjusts question complexity and provides context when needed
+
+**The Interrupting User**:
+- **Barge-In Capability**: Leveraging LiveKit's low-latency WebRTC transport with `allow_interruptions=True`
+- **Immediate Response**: When user interrupts agent speech:
+  - Voice Activity Detection (VAD) immediately halts agent speech
+  - Transcript updates in real-time
+  - Agent processes new input immediately
+  - Simulates natural human reaction to interruptions
+- **Graceful Handling**: Turn detection handles interruptions gracefully without breaking conversation flow
+- **Transcript Accuracy**: All interruptions are accurately tracked in the conversation transcript
+
+**Technical Implementation**:
+- **Silence Detection**: Background task (`monitor_silence_continuously`) monitors conversation state continuously
+- **VAD Integration**: Voice Activity Detection enables natural interruption handling
+- **Prompt Engineering**: Comprehensive system prompts guide agent behavior for all persona types
+- **Event-Driven Architecture**: LiveKit events (TTSMetrics, turn completion) trigger appropriate responses
+- **State Management**: Flags and timestamps track conversation state to prevent duplicate actions
+
+**Benefits**:
+- **Natural Conversation Flow**: Handles all user types without breaking conversation rhythm
+- **Intelligent Adaptation**: Agent adapts behavior based on user interaction patterns
+- **Professional Boundaries**: Maintains interview structure while accommodating different communication styles
+- **Low Latency**: Quick response time enables natural interruption handling
+- **Comprehensive Coverage**: Handles silent, chatty, confused, and interrupting users seamlessly
 
 ### 3. Data Storage Architecture
 
