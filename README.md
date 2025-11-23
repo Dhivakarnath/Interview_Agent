@@ -272,6 +272,13 @@ graph LR
 
 ## Setup Instructions
 
+### Clone the Repository
+
+```bash
+git clone https://github.com/Dhivakarnath/Interview_Agent.git
+cd Interview_Agent
+```
+
 ### Prerequisites
 
 - **Python**: 3.10 or higher
@@ -285,8 +292,8 @@ graph LR
 ### Backend Setup
 
 1. **Navigate to backend directory**:
-```bash
-cd backend
+   ```bash
+   cd backend
    ```
 
 2. **Create and activate virtual environment**:
@@ -297,8 +304,8 @@ cd backend
 
 3. **Install dependencies**:
    ```bash
-    pip install -r requirements.txt
-    ```
+   pip install -r requirements.txt
+   ```
 
 4. **Configure environment variables**:
    ```bash
@@ -331,8 +338,8 @@ cd backend
    ```
 
 7. **Start FastAPI server**:
-```bash
-python main.py
+   ```bash
+   python main.py
    # Server runs on http://localhost:8000
    ```
 
@@ -342,27 +349,27 @@ python main.py
    ```
 
 9. **Start the voice agent** (in a separate terminal):
-```bash
+   ```bash
    cd backend
    source venv/bin/activate
-python voice/voice_agent.py dev
-```
+   python voice/voice_agent.py dev
+   ```
 
 ### Frontend Setup
 
 1. **Navigate to frontend directory**:
-```bash
-cd frontend
+   ```bash
+   cd frontend
    ```
 
 2. **Install dependencies**:
    ```bash
-npm install
-```
+   npm install
+   ```
 
 3. **Run development server**:
-```bash
-npm run dev
+   ```bash
+   npm run dev
    # Application runs on http://localhost:3000
    ```
 
