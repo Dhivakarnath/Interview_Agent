@@ -524,6 +524,32 @@ Use this job description to:
         )
     logger.info(f"✅ Video analysis capabilities added to prompt context (mode: {interview_mode})")
     
+    # Add strict requirements for mock interviews
+    if interview_mode == "mock-interview":
+        initial_ctx.add_message(
+            role="system",
+            content="CRITICAL REQUIREMENTS FOR MOCK INTERVIEW:\n"
+                   "1. Camera and screen sharing MUST be enabled before the interview can begin\n"
+                   "2. DO NOT ask any interview questions until BOTH camera and screen sharing are confirmed active\n"
+                   "3. If camera is missing, say: 'I need your camera to be enabled before we can proceed.'\n"
+                   "4. If screen sharing is missing, say: 'I need you to share your screen before we can proceed.'\n"
+                   "5. Wait and remind them until both are enabled\n"
+                   "6. SILENCE HANDLING: If candidate doesn't respond within 5 seconds after you ask a question, prompt them immediately:\n"
+                   "   - 'Are you still there? Please respond.'\n"
+                   "   - 'Can you hear me? Please answer the question.'\n"
+                   "   - 'I'm waiting for your response. Please proceed.'\n"
+                   "7. Continue prompting every 5 seconds of silence until they respond\n"
+                   "8. Do NOT move to next question if they haven't answered - keep prompting them to respond\n"
+                   "9. SCREEN MONITORING: Continuously monitor the screen share content throughout the entire interview\n"
+                   "10. CRITICAL: The candidate MUST remain on the interview application page at all times\n"
+                   "11. If screen shows ANY content from OTHER APPLICATIONS, OTHER BROWSER TABS, or ANY PAGE OUTSIDE THE INTERVIEW APPLICATION:\n"
+                   "    - First warning (immediately): 'I notice you've switched away from the interview application. Please return to the interview page immediately.'\n"
+                   "    - Wait 10 seconds, if still not returned: 'You must stay on the interview application page. Please return now or the interview will be terminated.'\n"
+                   "    - Wait another 10 seconds, if still not returned: 'I'm terminating this interview as you have left the interview application. Thank you for your time.'\n"
+                   "12. Any navigation away from the interview app is grounds for immediate interview termination\n"
+                   "13. This is a strict requirement - candidates must stay within the interview application at all times"
+        )
+    
     # Add context about resume RAG tool if available
     if user_name and _GLOBAL_RAG_SERVICE:
         if interview_mode == "mock-interview":
@@ -762,19 +788,49 @@ Use this job description to:
     # Generate appropriate greeting based on mode
     if interview_mode == "mock-interview":
         # Professional interviewer greeting for mock interview
-        if user_name:
-            greeting = f"Hello {user_name}. I'm Nila, and I'll be conducting your interview today. Please make sure to turn on your camera and share your screen."
+        # Check if camera and screen share are enabled
+        if not has_camera or not has_screen_share:
+            # Strict requirement message
+            missing_items = []
+            if not has_camera:
+                missing_items.append("camera")
+            if not has_screen_share:
+                missing_items.append("screen sharing")
+            
+            requirement_msg = f"Hello{' ' + user_name if user_name else ''}. I'm Nila, and I'll be conducting your interview today. "
+            requirement_msg += f"Before we can proceed, I need you to enable your {' and '.join(missing_items)}. "
+            requirement_msg += "The interview cannot begin until both your camera and screen sharing are active. Please enable them now."
+            
+            await session.say(requirement_msg)
+            logger.info(f"🎯 Mock interview mode - requirements check: camera={has_camera}, screen_share={has_screen_share}")
+            
+            # Add system message to context about waiting for requirements
+            initial_ctx.add_message(
+                role="system",
+                content=f"CRITICAL: The candidate has NOT enabled {' and '.join(missing_items)} yet. DO NOT start the interview. Keep reminding them to enable camera and screen sharing until both are active. Only after confirming both are enabled, proceed with the interview."
+            )
+            
+            # Track requirement message in transcript
+            assistant._transcript.append({
+                "role": "assistant",
+                "content": requirement_msg,
+                "timestamp": datetime.now().isoformat()
+            })
         else:
-            greeting = "Hello. I'm Nila, and I'll be conducting your interview today. Please make sure to turn on your camera and share your screen."
-        await session.say(greeting)
-        logger.info("🎯 Mock interview mode - professional greeting sent")
-        
-        # Track greeting in transcript
-        assistant._transcript.append({
-            "role": "assistant",
-            "content": greeting,
-            "timestamp": datetime.now().isoformat()
-        })
+            # Both are enabled, proceed with normal greeting
+            if user_name:
+                greeting = f"Hello {user_name}. I'm Nila, and I'll be conducting your interview today. I've reviewed your resume. Let's begin."
+            else:
+                greeting = "Hello. I'm Nila, and I'll be conducting your interview today. I've reviewed your resume. Let's begin."
+            await session.say(greeting)
+            logger.info("🎯 Mock interview mode - professional greeting sent (camera and screen share confirmed)")
+            
+            # Track greeting in transcript
+            assistant._transcript.append({
+                "role": "assistant",
+                "content": greeting,
+                "timestamp": datetime.now().isoformat()
+            })
         
         # Set up feedback generation when session ends
         # Use a flag to prevent duplicate feedback generation
