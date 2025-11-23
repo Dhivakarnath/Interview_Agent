@@ -78,35 +78,6 @@ Comprehensive feedback analysis dashboard showing all interview sessions with se
 - **Transcript Tracking**: Complete conversation logging for feedback generation
 - **Multi-modal Context**: Integration of camera, screen share, and audio streams for comprehensive assessment
 
-## Technology Stack
-
-### Backend
-
-- **Framework**: FastAPI 0.118.0
-- **Voice Agent**: LiveKit Agents SDK 1.2.14
-- **LLM**: AWS Bedrock (Claude Haiku)
-- **Embeddings**: Amazon Titan Embeddings v2
-- **Vector Database**: Qdrant 1.9.0
-- **Document Database**: MongoDB (Motor 3.3.2)
-- **STT**: Deepgram Nova-3
-- **TTS**: ElevenLabs Flash v2.5
-- **Video Processing**: PyAV 15.1.0
-- **Document Parsing**: PyPDF2, python-docx
-
-### Frontend
-
-- **Framework**: Next.js 15.5.2 (React 19)
-- **Real-Time Communication**: LiveKit Components React 2.9.15
-- **Code Editor**: Monaco Editor 0.55.1
-- **Styling**: Tailwind CSS 3.4.1
-- **Language**: TypeScript 5
-
-### Infrastructure
-
-- **Real-Time Communication**: LiveKit Server
-- **Cloud Services**: AWS Bedrock, AWS S3 (optional)
-- **Databases**: MongoDB, Qdrant
-
 ## Architecture
 
 ### System Architecture
@@ -269,367 +240,6 @@ graph LR
     ResumeIndexer --> EmbeddingGen
     VectorSearch --> ResumeIndexer
 ```
-
-## Setup Instructions
-
-### Clone the Repository
-
-```bash
-git clone https://github.com/Dhivakarnath/Interview_Agent.git
-cd Interview_Agent
-```
-
-### Prerequisites
-
-- **Python**: 3.10 or higher
-- **Node.js**: 18.x or higher
-- **MongoDB**: 4.4 or higher (running locally or remote)
-- **Qdrant**: 1.0 or higher (optional, for resume search)
-- **LiveKit Server**: Running instance (cloud or self-hosted)
-- **AWS Account**: With Bedrock access configured
-- **API Keys**: Deepgram, ElevenLabs
-
-### Backend Setup
-
-1. **Navigate to backend directory**:
-```bash
-cd backend
-   ```
-
-2. **Create and activate virtual environment**:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**:
-   ```bash
-pip install -r requirements.txt
-```
-
-4. **Configure environment variables**:
-   ```bash
-   # Copy the template file
-   cp ../env.template .env
-   
-   # Edit .env with your configuration
-   # Required variables:
-   # - AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
-   # - BEDROCK_MODEL_ID
-   # - LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
-   # - DEEPGRAM_API_KEY
-   # - ELEVENLABS_API_KEY
-   # - MONGODB_URL (default: mongodb://localhost:27017)
-   # - QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION_PREFIX
-   ```
-
-5. **For development/testing, export AWS credentials** (optional):
-   ```bash
-   export AWS_ACCESS_KEY_ID="your-access-key-id"
-   export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
-   export AWS_SESSION_TOKEN="your-session-token"
-   ```
-
-6. **Initialize MongoDB** (if running locally):
-   ```bash
-   # Ensure MongoDB is running
-   brew install mongodb-community
-   brew services start mongodb-community
-   ```
-
-7. **Start FastAPI server**:
-```bash
-python main.py
-   # Server runs on http://localhost:8000
-   ```
-
-8. **Download LiveKit agent dependencies** (first time only):
-   ```bash
-   python voice/voice_agent.py download-files
-   ```
-
-9. **Start the voice agent** (in a separate terminal):
-```bash
-   cd backend
-   source venv/bin/activate
-python voice/voice_agent.py dev
-```
-
-### Frontend Setup
-
-1. **Navigate to frontend directory**:
-```bash
-cd frontend
-   ```
-
-2. **Install dependencies**:
-   ```bash
-npm install
-```
-
-3. **Run development server**:
-```bash
-npm run dev
-   # Application runs on http://localhost:3000
-   ```
-
-### Verification
-
-1. **Check backend health**:
-   ```bash
-   curl http://localhost:8000/api/health
-   ```
-
-2. **Verify MongoDB connection**:
-   - Check backend logs for "MongoDB connected successfully"
-   - Verify feedback collection exists
-
-3. **Test frontend**:
-   - Open http://localhost:3000
-   - Verify all tabs load correctly
-
-### Running the Complete System
-
-1. **Terminal 1 - FastAPI Backend**:
-   ```bash
-   cd backend
-   source venv/bin/activate
-   python main.py
-   ```
-
-2. **Terminal 2 - Voice Agent**:
-   ```bash
-   cd backend
-   source venv/bin/activate
-   python voice/voice_agent.py dev
-   ```
-
-3. **Terminal 3 - Frontend**:
-   ```bash
-   cd frontend
-   npm run dev
-   ```
-
-4. **Access the application**:
-   - Open http://localhost:3000 in your browser
-   - Start an interview session
-
-## Architecture Notes
-
-### System Design Principles
-
-1. **Microservices Architecture**: Separation of concerns with distinct services for RAG, feedback, and video analysis
-2. **Event-Driven Communication**: LiveKit events drive agent behavior and session management
-3. **Asynchronous Processing**: All I/O operations are async to handle concurrent sessions
-4. **Modular Agent Design**: InterviewAssistant extends LiveKit Agent with custom video and transcript handling
-
-### Key Components
-
-#### 1. FastAPI Backend (`backend/main.py`)
-
-**Responsibilities**:
-- REST API endpoints for room creation and resume upload
-- Session management and tracking
-- Feedback retrieval endpoints
-- MongoDB connection management
-
-**Key Endpoints**:
-- `POST /api/interview/upload-resume`: Upload and index resume
-- `POST /api/interview/create-room`: Create LiveKit room and generate token
-- `GET /api/feedback/user/{user_name}`: Retrieve user feedback
-- `GET /api/feedback/{session_id}`: Retrieve session-specific feedback
-
-#### 2. Voice Agent (`backend/voice/voice_agent.py`)
-
-**Responsibilities**:
-- Real-time voice interaction using LiveKit Agents SDK
-- Video frame sampling and analysis
-- Silence detection and prompting
-- Transcript tracking for feedback generation
-- Session lifecycle management
-
-**Key Features**:
-- **InterviewAssistant Class**: Extends LiveKit Agent with custom video handling
-- **Video Stream Processing**: Samples camera and screen share frames
-- **Silence Monitoring**: Background task for 5-second silence detection
-- **Transcript Management**: Tracks all conversation messages for feedback
-
-#### 3. RAG Service (`backend/services/rag_service.py`)
-
-**Responsibilities**:
-- Resume indexing using Titan embeddings
-- Vector similarity search in Qdrant
-- Context retrieval for personalized questions
-
-**Architecture**:
-- **Embedding Generation**: AWS Bedrock Titan Embeddings v2
-- **Vector Storage**: Qdrant with cosine similarity search
-- **Chunking Strategy**: Paragraph-based chunking (500 chars)
-- **User Isolation**: Filtered searches by user_name
-
-#### 4. Feedback Service (`backend/services/feedback_service.py`)
-
-**Responsibilities**:
-- Post-interview feedback generation using Claude
-- Structured feedback parsing
-- Feedback storage in MongoDB
-
-**Process Flow**:
-1. Transcript conversion to readable format
-2. Prompt engineering for structured feedback
-3. LLM generation via AWS Bedrock
-4. Section extraction and parsing
-5. MongoDB storage
-
-#### 5. Video Analysis Service (`backend/services/video_analysis_service.py`)
-
-**Responsibilities**:
-- Body language analysis from camera frames
-- Code analysis from screen share frames
-- Multimodal prompt construction for Bedrock
-
-**Capabilities**:
-- Base64 image encoding
-- Context-aware prompts
-- Structured analysis output
-
-#### 6. Frontend (`frontend/app/page.tsx`)
-
-**Responsibilities**:
-- User interface for interview sessions
-- LiveKit room connection management
-- Real-time chat and transcription display
-- Code editor integration
-- Feedback analysis dashboard
-
-**Key Components**:
-- **Practice Mode**: Supportive coaching interface
-- **Mock Interview Mode**: Realistic interview simulation
-- **Analysis View**: Feedback browsing and download
-- **IDE Component**: Monaco Editor for code practice
-
-### Data Flow
-
-#### Resume Upload Flow
-
-```
-User Uploads Resume
-    ↓
-FastAPI receives file
-    ↓
-Document Parser extracts text
-    ↓
-RAG Service chunks text
-    ↓
-Titan Embeddings generate vectors
-    ↓
-Qdrant stores vectors with metadata
-    ↓
-Resume indexed and searchable
-```
-
-#### Interview Session Flow
-
-```
-User Starts Interview
-    ↓
-FastAPI creates LiveKit room
-    ↓
-Frontend connects to room
-    ↓
-Voice Agent receives job event
-    ↓
-Agent loads resume context via RAG
-    ↓
-Agent generates personalized questions
-    ↓
-Real-time conversation begins
-    ↓
-Transcript tracked throughout session
-    ↓
-Session ends → Feedback generated
-    ↓
-Feedback saved to MongoDB
-```
-
-#### Feedback Generation Flow
-
-```
-Session Ends
-    ↓
-Transcript collected
-    ↓
-Feedback Service processes transcript
-    ↓
-Prompt constructed with context
-    ↓
-Claude generates structured feedback
-    ↓
-Feedback parsed into sections
-    ↓
-Stored in MongoDB
-    ↓
-Available in Analysis dashboard
-```
-
-### Database Schema
-
-#### MongoDB - Feedback Collection
-
-```javascript
-{
-  _id: ObjectId,
-  session_id: String (unique, indexed),
-  user_name: String (indexed),
-  interview_mode: String,
-  job_description: String,
-  feedback_text: String,
-  sections: {
-    "Overall Performance Summary": String,
-    "Strengths (with Scores)": String,
-    "Weaknesses (with Scores)": String,
-    "Areas for Improvement Summary": String,
-    "Overall Scores": String
-  },
-  created_at: Date (indexed),
-  updated_at: Date
-}
-```
-
-#### Qdrant - Resume Collection
-
-```python
-{
-  id: int64,
-  vector: {
-    "text-dense": [float]  # 1024-dimensional embedding
-  },
-  payload: {
-    "text": String,
-    "source": "resume",
-    "user_name": String,
-    "resume_id": String,
-    "chunk_index": int,
-    "total_chunks": int
-  }
-}
-```
-
-### Security Considerations
-
-1. **Environment Variables**: Sensitive credentials stored in `.env` (not committed)
-2. **JWT Tokens**: LiveKit tokens generated server-side with expiration
-3. **CORS**: Configured for development (should be restricted in production)
-4. **Input Validation**: Pydantic models for request validation
-5. **Database Indexing**: Indexes on frequently queried fields
-
-### Performance Optimizations
-
-1. **Async Operations**: All database and API calls are asynchronous
-2. **Connection Pooling**: MongoDB connection reuse
-3. **Vector Search**: Efficient similarity search in Qdrant
-4. **Transcript Batching**: Efficient transcript storage
-5. **Video Frame Sampling**: Selective frame processing to reduce load
 
 ## Design Decisions
 
@@ -1207,6 +817,398 @@ s3://interview-sessions/
 - **DocumentDB Backups**: Automated daily backups with point-in-time recovery
 - **Qdrant Snapshots**: Regular snapshots of vector database
 - **Multi-Region Deployment**: Active-passive setup for high availability
+
+## Technology Stack
+
+### Backend
+
+- **Framework**: FastAPI 0.118.0
+- **Voice Agent**: LiveKit Agents SDK 1.2.14
+- **LLM**: AWS Bedrock (Claude Haiku)
+- **Embeddings**: Amazon Titan Embeddings v2
+- **Vector Database**: Qdrant 1.9.0
+- **Document Database**: MongoDB (Motor 3.3.2)
+- **STT**: Deepgram Nova-3
+- **TTS**: ElevenLabs Flash v2.5
+- **Video Processing**: PyAV 15.1.0
+- **Document Parsing**: PyPDF2, python-docx
+
+### Frontend
+
+- **Framework**: Next.js 15.5.2 (React 19)
+- **Real-Time Communication**: LiveKit Components React 2.9.15
+- **Code Editor**: Monaco Editor 0.55.1
+- **Styling**: Tailwind CSS 3.4.1
+- **Language**: TypeScript 5
+
+### Infrastructure
+
+- **Real-Time Communication**: LiveKit Server
+- **Cloud Services**: AWS Bedrock, AWS S3 (optional)
+- **Databases**: MongoDB, Qdrant
+
+## Setup Instructions
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/Dhivakarnath/Interview_Agent.git
+cd Interview_Agent
+```
+
+### Prerequisites
+
+- **Python**: 3.10 or higher
+- **Node.js**: 18.x or higher
+- **MongoDB**: 4.4 or higher (running locally or remote)
+- **Qdrant**: 1.0 or higher (optional, for resume search)
+- **LiveKit Server**: Running instance (cloud or self-hosted)
+- **AWS Account**: With Bedrock access configured
+- **API Keys**: Deepgram, ElevenLabs
+
+### Backend Setup
+
+1. **Navigate to backend directory**:
+   ```bash
+   cd backend
+   ```
+
+2. **Create and activate virtual environment**:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configure environment variables**:
+   ```bash
+   # Copy the template file
+   cp ../env.template .env
+   
+   # Edit .env with your configuration
+   # Required variables:
+   # - AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+   # - BEDROCK_MODEL_ID
+   # - LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+   # - DEEPGRAM_API_KEY
+   # - ELEVENLABS_API_KEY
+   # - MONGODB_URL (default: mongodb://localhost:27017)
+   # - QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION_PREFIX
+   ```
+
+5. **For development/testing, export AWS credentials** (optional):
+   ```bash
+   export AWS_ACCESS_KEY_ID="your-access-key-id"
+   export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+   export AWS_SESSION_TOKEN="your-session-token"
+   ```
+
+6. **Initialize MongoDB** (if running locally):
+   ```bash
+   # Ensure MongoDB is running
+   brew install mongodb-community
+   brew services start mongodb-community
+   ```
+
+7. **Start FastAPI server**:
+   ```bash
+   python main.py
+   # Server runs on http://localhost:8000
+   ```
+
+8. **Download LiveKit agent dependencies** (first time only):
+   ```bash
+   python voice/voice_agent.py download-files
+   ```
+
+9. **Start the voice agent** (in a separate terminal):
+   ```bash
+   cd backend
+   source venv/bin/activate
+   python voice/voice_agent.py dev
+   ```
+
+### Frontend Setup
+
+1. **Navigate to frontend directory**:
+   ```bash
+   cd frontend
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Run development server**:
+   ```bash
+   npm run dev
+   # Application runs on http://localhost:3000
+   ```
+
+### Verification
+
+1. **Check backend health**:
+   ```bash
+   curl http://localhost:8000/api/health
+   ```
+
+2. **Verify MongoDB connection**:
+   - Check backend logs for "MongoDB connected successfully"
+   - Verify feedback collection exists
+
+3. **Test frontend**:
+   - Open http://localhost:3000
+   - Verify all tabs load correctly
+
+### Running the Complete System
+
+1. **Terminal 1 - FastAPI Backend**:
+   ```bash
+   cd backend
+   source venv/bin/activate
+   python main.py
+   ```
+
+2. **Terminal 2 - Voice Agent**:
+   ```bash
+   cd backend
+   source venv/bin/activate
+   python voice/voice_agent.py dev
+   ```
+
+3. **Terminal 3 - Frontend**:
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+
+4. **Access the application**:
+   - Open http://localhost:3000 in your browser
+   - Start an interview session
+
+## Architecture Notes
+
+### System Design Principles
+
+1. **Microservices Architecture**: Separation of concerns with distinct services for RAG, feedback, and video analysis
+2. **Event-Driven Communication**: LiveKit events drive agent behavior and session management
+3. **Asynchronous Processing**: All I/O operations are async to handle concurrent sessions
+4. **Modular Agent Design**: InterviewAssistant extends LiveKit Agent with custom video and transcript handling
+
+### Key Components
+
+#### 1. FastAPI Backend (`backend/main.py`)
+
+**Responsibilities**:
+- REST API endpoints for room creation and resume upload
+- Session management and tracking
+- Feedback retrieval endpoints
+- MongoDB connection management
+
+**Key Endpoints**:
+- `POST /api/interview/upload-resume`: Upload and index resume
+- `POST /api/interview/create-room`: Create LiveKit room and generate token
+- `GET /api/feedback/user/{user_name}`: Retrieve user feedback
+- `GET /api/feedback/{session_id}`: Retrieve session-specific feedback
+
+#### 2. Voice Agent (`backend/voice/voice_agent.py`)
+
+**Responsibilities**:
+- Real-time voice interaction using LiveKit Agents SDK
+- Video frame sampling and analysis
+- Silence detection and prompting
+- Transcript tracking for feedback generation
+- Session lifecycle management
+
+**Key Features**:
+- **InterviewAssistant Class**: Extends LiveKit Agent with custom video handling
+- **Video Stream Processing**: Samples camera and screen share frames
+- **Silence Monitoring**: Background task for 5-second silence detection
+- **Transcript Management**: Tracks all conversation messages for feedback
+
+#### 3. RAG Service (`backend/services/rag_service.py`)
+
+**Responsibilities**:
+- Resume indexing using Titan embeddings
+- Vector similarity search in Qdrant
+- Context retrieval for personalized questions
+
+**Architecture**:
+- **Embedding Generation**: AWS Bedrock Titan Embeddings v2
+- **Vector Storage**: Qdrant with cosine similarity search
+- **Chunking Strategy**: Paragraph-based chunking (500 chars)
+- **User Isolation**: Filtered searches by user_name
+
+#### 4. Feedback Service (`backend/services/feedback_service.py`)
+
+**Responsibilities**:
+- Post-interview feedback generation using Claude
+- Structured feedback parsing
+- Feedback storage in MongoDB
+
+**Process Flow**:
+1. Transcript conversion to readable format
+2. Prompt engineering for structured feedback
+3. LLM generation via AWS Bedrock
+4. Section extraction and parsing
+5. MongoDB storage
+
+#### 5. Video Analysis Service (`backend/services/video_analysis_service.py`)
+
+**Responsibilities**:
+- Body language analysis from camera frames
+- Code analysis from screen share frames
+- Multimodal prompt construction for Bedrock
+
+**Capabilities**:
+- Base64 image encoding
+- Context-aware prompts
+- Structured analysis output
+
+#### 6. Frontend (`frontend/app/page.tsx`)
+
+**Responsibilities**:
+- User interface for interview sessions
+- LiveKit room connection management
+- Real-time chat and transcription display
+- Code editor integration
+- Feedback analysis dashboard
+
+**Key Components**:
+- **Practice Mode**: Supportive coaching interface
+- **Mock Interview Mode**: Realistic interview simulation
+- **Analysis View**: Feedback browsing and download
+- **IDE Component**: Monaco Editor for code practice
+
+### Data Flow
+
+#### Resume Upload Flow
+
+```
+User Uploads Resume
+    ↓
+FastAPI receives file
+    ↓
+Document Parser extracts text
+    ↓
+RAG Service chunks text
+    ↓
+Titan Embeddings generate vectors
+    ↓
+Qdrant stores vectors with metadata
+    ↓
+Resume indexed and searchable
+```
+
+#### Interview Session Flow
+
+```
+User Starts Interview
+    ↓
+FastAPI creates LiveKit room
+    ↓
+Frontend connects to room
+    ↓
+Voice Agent receives job event
+    ↓
+Agent loads resume context via RAG
+    ↓
+Agent generates personalized questions
+    ↓
+Real-time conversation begins
+    ↓
+Transcript tracked throughout session
+    ↓
+Session ends → Feedback generated
+    ↓
+Feedback saved to MongoDB
+```
+
+#### Feedback Generation Flow
+
+```
+Session Ends
+    ↓
+Transcript collected
+    ↓
+Feedback Service processes transcript
+    ↓
+Prompt constructed with context
+    ↓
+Claude generates structured feedback
+    ↓
+Feedback parsed into sections
+    ↓
+Stored in MongoDB
+    ↓
+Available in Analysis dashboard
+```
+
+### Database Schema
+
+#### MongoDB - Feedback Collection
+
+```javascript
+{
+  _id: ObjectId,
+  session_id: String (unique, indexed),
+  user_name: String (indexed),
+  interview_mode: String,
+  job_description: String,
+  feedback_text: String,
+  sections: {
+    "Overall Performance Summary": String,
+    "Strengths (with Scores)": String,
+    "Weaknesses (with Scores)": String,
+    "Areas for Improvement Summary": String,
+    "Overall Scores": String
+  },
+  created_at: Date (indexed),
+  updated_at: Date
+}
+```
+
+#### Qdrant - Resume Collection
+
+```python
+{
+  id: int64,
+  vector: {
+    "text-dense": [float]  # 1024-dimensional embedding
+  },
+  payload: {
+    "text": String,
+    "source": "resume",
+    "user_name": String,
+    "resume_id": String,
+    "chunk_index": int,
+    "total_chunks": int
+  }
+}
+```
+
+### Security Considerations
+
+1. **Environment Variables**: Sensitive credentials stored in `.env` (not committed)
+2. **JWT Tokens**: LiveKit tokens generated server-side with expiration
+3. **CORS**: Configured for development (should be restricted in production)
+4. **Input Validation**: Pydantic models for request validation
+5. **Database Indexing**: Indexes on frequently queried fields
+
+### Performance Optimizations
+
+1. **Async Operations**: All database and API calls are asynchronous
+2. **Connection Pooling**: MongoDB connection reuse
+3. **Vector Search**: Efficient similarity search in Qdrant
+4. **Transcript Batching**: Efficient transcript storage
+5. **Video Frame Sampling**: Selective frame processing to reduce load
+
+
 
 ## API Documentation
 
