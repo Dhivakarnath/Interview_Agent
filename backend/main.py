@@ -10,11 +10,20 @@ from datetime import datetime, timezone
 from typing import Dict, Optional, Any
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
+import uuid
+import asyncio
+import json
 
 from config.settings import Config
+from services.rag_service import RAGService
+from services.document_parser import DocumentParser
+
+# Global RAG service instance
+rag_service = RAGService()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,13 +56,23 @@ app.add_middleware(
 )
 
 active_sessions: Dict[str, Dict] = {}
+# Store pending resumes (resume_id -> resume_text) for indexing when user_name is available
+pending_resumes: Dict[str, str] = {}
 
 
 class InterviewRoomRequest(BaseModel):
     """Request to create an interview room"""
     user_name: Optional[str] = Field(None, description="User name")
     job_description: Optional[str] = Field(None, description="Job description text")
+    resume_id: Optional[str] = Field(None, description="Resume ID if already uploaded")
     language: str = Field(default="en-US", description="Language code")
+
+
+class ResumeUploadResponse(BaseModel):
+    """Response for resume upload"""
+    success: bool
+    resume_id: str
+    message: str
 
 
 class InterviewRoomResponse(BaseModel):
@@ -114,6 +133,55 @@ def is_livekit_available() -> bool:
     return bool(Config.LIVEKIT_URL and Config.LIVEKIT_API_KEY and Config.LIVEKIT_API_SECRET)
 
 
+@app.post("/api/interview/upload-resume", response_model=ResumeUploadResponse)
+async def upload_resume(
+    file: UploadFile = File(...),
+    user_name: Optional[str] = Form(None)
+):
+    """Upload and index resume"""
+    try:
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No file provided")
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Parse document
+        parser = DocumentParser()
+        resume_text = parser.parse_document(file_content, file.filename)
+        
+        if not resume_text:
+            raise HTTPException(status_code=400, detail="Could not extract text from resume")
+        
+        # Generate resume ID
+        resume_id = str(uuid.uuid4())
+        
+        # If user_name is provided, index immediately. Otherwise, store for later indexing
+        if user_name:
+            # Index resume using user_name directly
+            asyncio.create_task(rag_service.index_resume(user_name, resume_text, resume_id))
+            logger.info(f"✅ Resume uploaded and indexing started: resume_id={resume_id}, user_name={user_name}")
+            message = "Resume uploaded successfully. Indexing in progress..."
+        else:
+            # Store resume text temporarily (in memory) for indexing when room is created
+            # In production, you might want to store this in a database or cache
+            pending_resumes[resume_id] = resume_text
+            logger.info(f"✅ Resume uploaded (pending indexing): resume_id={resume_id}, user_name will be provided later")
+            message = "Resume uploaded successfully. It will be indexed when you start the interview session."
+        
+        return ResumeUploadResponse(
+            success=True,
+            resume_id=resume_id,
+            message=message
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Resume upload failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Resume upload failed: {str(e)}")
+
+
 @app.post("/api/interview/create-room", response_model=InterviewRoomResponse)
 async def create_interview_room(request: InterviewRoomRequest):
     """Create LiveKit room for interview session"""
@@ -127,15 +195,37 @@ async def create_interview_room(request: InterviewRoomRequest):
         user_name = request.user_name or "Candidate"
         identity = f"user-{session_id[:8]}"
         
+        # If resume_id is provided and resume is pending (uploaded without user_name), index it now
+        if request.resume_id and request.resume_id in pending_resumes:
+            resume_text = pending_resumes.pop(request.resume_id)
+            asyncio.create_task(rag_service.index_resume(user_name, resume_text, request.resume_id))
+            logger.info(f"✅ Indexing pending resume: resume_id={request.resume_id}, user_name={user_name}")
+        
+        # Set user context in RAG service using user_name directly
+        # Job description will be passed directly in prompts, not indexed
+        rag_service.set_user_context(user_name, None)
+        logger.info(f"✅ Set RAG context: user_name={user_name}")
+        
+        # Prepare metadata for token
+        token_metadata = {
+            "user_name": user_name,
+            "session_id": session_id,
+        }
+        
+        if request.job_description:
+            token_metadata["job_description"] = request.job_description
+            logger.info(f"📄 Job description included in token metadata (length: {len(request.job_description)} chars)")
+        else:
+            logger.info("📄 No job description provided")
+        
+        if request.resume_id:
+            token_metadata["resume_id"] = request.resume_id
+        
         jwt_token = generate_livekit_token(
             room_name=room_name,
             participant_identity=identity,
             participant_name=user_name,
-            metadata={
-                "user_name": user_name,
-                "session_id": session_id,
-                "job_description": request.job_description
-            }
+            metadata=token_metadata
         )
         
         active_sessions[session_id] = {
@@ -143,6 +233,7 @@ async def create_interview_room(request: InterviewRoomRequest):
             "user_name": user_name,
             "room_name": room_name,
             "job_description": request.job_description,
+            "resume_id": request.resume_id,
             "created_at": datetime.now(),
             "language": request.language,
             "status": "active"

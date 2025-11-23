@@ -47,7 +47,7 @@ class Config:
     # Vector Database Configuration
     QDRANT_URL = os.getenv("QDRANT_URL", "")
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
-    COLLECTION_NAME_RESUMES = "candidate_resumes"
+    QDRANT_COLLECTION_PREFIX = os.getenv("QDRANT_COLLECTION_PREFIX", "candidate_resumes")
     
     # MongoDB Configuration
     MONGODB_URL = os.getenv("MONGODB_URL", "")
