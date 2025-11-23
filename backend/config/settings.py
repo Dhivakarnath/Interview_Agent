@@ -53,14 +53,6 @@ class Config:
     MONGODB_URL = os.getenv("MONGODB_URL", "")
     MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "interview_agent")
     
-    # S3 Configuration
-    S3_BUCKET_SESSIONS = os.getenv("S3_BUCKET_SESSIONS", "")
-    S3_REGION = os.getenv("S3_REGION", "")
-    S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
-    S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
-    
-    # Perplexity API
-    PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
     
     # Performance Configuration
     REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))

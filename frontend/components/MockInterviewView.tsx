@@ -184,7 +184,7 @@ export default function MockInterviewView({
                   <textarea
                     value={jobDescription}
                     onChange={(e) => setJobDescription(e.target.value)}
-                    placeholder="Enter job description for realistic interview..."
+                    placeholder="Enter job description for personalized interview..."
                     rows={10}
                     className="w-full px-5 py-4 bg-gray-900/70 border border-cyan-500/30 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-white placeholder-gray-500 transition-all resize-none"
                     disabled={isConnecting}

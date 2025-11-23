@@ -292,9 +292,9 @@ export default function Home() {
               <>
                 <div>
                   <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-                    Interview Practice
+                    TalentFlow
                   </h1>
-                  <p className="text-gray-400 text-sm mt-1">AI-Powered Mock Interviews</p>
+                  <p className="text-gray-400 text-sm mt-1">Agentic Interview Partner</p>
                 </div>
               </>
             )}
@@ -431,9 +431,9 @@ export default function Home() {
                       </div>
                       <div className="text-left">
                         <h1 className="text-4xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-                          Interview Practice Partner
+                          Practice Mode
                         </h1>
-                        <p className="text-gray-400 text-sm mt-1">Professional AI-Powered Mock Interview Agent</p>
+                        <p className="text-gray-400 text-sm mt-1">Practice with the AI Interviewer</p>
                       </div>
                     </div>
                     <p className="text-gray-300 text-lg">Prepare for your next interview with personalized practice sessions</p>
