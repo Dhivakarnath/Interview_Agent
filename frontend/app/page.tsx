@@ -18,6 +18,7 @@ import {
   type TrackReference,
 } from '@livekit/components-react';
 import { Room, RoomEvent, RemoteParticipant, RemoteTrack, Track } from 'livekit-client';
+import IDE from '../components/IDE';
 
 type TabType = 'interview' | 'settings';
 
@@ -177,6 +178,7 @@ export default function Home() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [sessionData, setSessionData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<TabType>('interview');
+  const [isIDEView, setIsIDEView] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const handleResumeUpload = async (file: File) => {
@@ -305,15 +307,33 @@ export default function Home() {
 
           <nav className="flex-1 p-4 space-y-2">
             <button
-              onClick={() => setActiveTab('interview')}
+              onClick={() => {
+                setActiveTab('interview');
+                setIsIDEView(false);
+              }}
               className={`w-full text-left px-4 py-3 rounded-lg transition-all ${
-                activeTab === 'interview'
+                activeTab === 'interview' && !isIDEView
                   ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
                   : 'text-gray-400 hover:text-cyan-400 hover:bg-gray-800'
               }`}
             >
               🎤 Interview Agent
             </button>
+            {room && (
+              <button
+                onClick={() => {
+                  setActiveTab('interview');
+                  setIsIDEView(!isIDEView);
+                }}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-all ${
+                  isIDEView
+                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
+                    : 'text-gray-400 hover:text-cyan-400 hover:bg-gray-800'
+                }`}
+              >
+                💻 Code Editor
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('settings')}
               className={`w-full text-left px-4 py-3 rounded-lg transition-all ${
@@ -542,6 +562,8 @@ export default function Home() {
                     <InterviewAgentView 
                       userName={userName}
                       setUserName={setUserName}
+                      isIDEView={isIDEView}
+                      setIsIDEView={setIsIDEView}
                     />
                   </RoomContext.Provider>
                 )}
@@ -611,9 +633,13 @@ export default function Home() {
 function InterviewAgentView({ 
   userName,
   setUserName,
+  isIDEView,
+  setIsIDEView,
 }: {
   userName: string;
   setUserName: (name: string) => void;
+  isIDEView: boolean;
+  setIsIDEView: (value: boolean) => void;
 }) {
   const { localParticipant, microphoneTrack } = useLocalParticipant();
   const room = useRoomContext();
@@ -678,6 +704,12 @@ function InterviewAgentView({
     chat.send(message);
   };
 
+  const handleSendCode = (code: string, language: string) => {
+    // Format code message for agent
+    const codeMessage = `Here's my ${language} code:\n\`\`\`${language}\n${code}\n\`\`\`\n\nPlease review this code and provide feedback.`;
+    chat.send(codeMessage);
+  };
+
   // Get audio track for visualizer
   const micTrackRef = useMemo(() => {
     if (!microphoneTrack || !localParticipant) return undefined;
@@ -694,13 +726,71 @@ function InterviewAgentView({
       <StartAudio label="Start Audio" />
       
       <div className="flex-1 flex overflow-hidden">
-        {/* Middle Panel - CHAT */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Chat Header */}
-          <div className="bg-gray-800/50 border-b border-cyan-500/20 p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Chat</h3>
-              <div className="flex items-center gap-2">
+        {/* IDE View - Split Layout */}
+        {isIDEView ? (
+          <>
+            {/* Left Panel - IDE */}
+            <div className="flex-1 flex flex-col overflow-hidden border-r border-cyan-500/20">
+              <IDE onSendCode={handleSendCode} isConnected={!!room} />
+            </div>
+            
+            {/* Right Panel - Chat */}
+            <div className="w-96 flex flex-col overflow-hidden border-l border-cyan-500/20">
+              {/* Chat Header */}
+              <div className="bg-gray-800/50 border-b border-cyan-500/20 p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Chat</h3>
+                  <button
+                    onClick={() => setIsIDEView(false)}
+                    className="px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+                    title="Close IDE"
+                  >
+                    Close IDE
+                  </button>
+                </div>
+              </div>
+
+              {/* Chat Messages */}
+              <div className="flex-1 overflow-y-auto p-4 bg-gray-900/30 scrollbar-thin scrollbar-thumb-cyan-500/30 scrollbar-track-gray-900/50">
+                {messages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                    <svg className="w-12 h-12 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    <p className="text-xs font-medium">Code feedback will appear here</p>
+                  </div>
+                ) : (
+                  <ul className="space-y-1">
+                    {messages.map((msg, idx) => {
+                      const prevMsg = idx > 0 ? messages[idx - 1] : null;
+                      const hideName = prevMsg !== null && 
+                                      prevMsg.from?.identity === msg.from?.identity && 
+                                      prevMsg.from?.isLocal === msg.from?.isLocal &&
+                                      (new Date(msg.timestamp).getTime() - new Date(prevMsg.timestamp).getTime()) < 60000;
+                      return (
+                        <ChatEntry key={msg.id} entry={msg} hideName={hideName} />
+                      );
+                    })}
+                    <div ref={messagesEndRef} />
+                  </ul>
+                )}
+              </div>
+              
+              {/* Chat Input */}
+              <div className="bg-gray-800/50 border-t border-cyan-500/20 p-3">
+                <ChatInput onSend={handleSendMessage} disabled={!room} />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Normal View - CHAT */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Chat Header */}
+              <div className="bg-gray-800/50 border-b border-cyan-500/20 p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Chat</h3>
+                  <div className="flex items-center gap-2">
                 {/* Camera Toggle */}
                 <button
                   onClick={() => cameraToggle.toggle()}
@@ -857,6 +947,8 @@ function InterviewAgentView({
             </div>
           </div>
         </div>
+          </>
+        )}
       </div>
     </>
   );
