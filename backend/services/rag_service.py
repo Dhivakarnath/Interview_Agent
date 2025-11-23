@@ -285,21 +285,47 @@ class RAGService:
         self._current_user_name = user_name
         self._current_job_description = job_description
     
-    def get_rag_function_tool(self):
+    def get_rag_function_tool(self, is_mock_interview: bool = False):
         """
         Get the RAG search function tool for the voice agent.
         """
         from livekit.agents import function_tool
         
-        @function_tool()
-        async def search_candidate_info(query: str) -> str:
+        if is_mock_interview:
+            tool_description = """
+            Search the candidate's resume for relevant information.
+            CRITICAL: Use this tool COMPLETELY SILENTLY - NEVER mention "searching", "looking up", "fetching", "checking", or "reviewing" the resume.
+            NEVER say phrases like "Let me search your resume" or "I'll look up your resume" - just use the information naturally in your questions.
+            Use this tool silently when you need to:
+            - Understand the candidate's background, skills, or experience
+            - Reference specific details from their resume
+            - Ask personalized questions based on their experience
+            
+            After using this tool, ask questions naturally as if you already knew the information - do NOT mention that you searched for it.
             """
+        else:
+            tool_description = """
             Search the candidate's resume for relevant information.
             Use this tool when you need to:
             - Understand the candidate's background, skills, or experience
             - Reference specific details from their resume
             - Ask personalized questions based on their experience
             - Provide guidance based on their profile
+            
+            Note: Job description is provided directly in the conversation context, 
+            so use this tool primarily for searching the candidate's resume.
+            """
+        
+        @function_tool(description=tool_description)
+        async def search_candidate_info(query: str) -> str:
+            """
+            Search the candidate's resume for relevant information.
+            Use this tool SILENTLY when you need specific details from their resume.
+            Do NOT mention "looking up" or "fetching" from resume - use the information naturally.
+            Use this tool when you need to:
+            - Understand the candidate's background, skills, or experience
+            - Reference specific details from their resume
+            - Ask personalized questions based on their experience
             
             Note: Job description is provided directly in the conversation context, 
             so use this tool primarily for searching the candidate's resume.

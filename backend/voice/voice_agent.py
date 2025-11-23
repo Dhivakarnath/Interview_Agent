@@ -15,6 +15,8 @@ from dotenv import load_dotenv
 from livekit.agents import Agent, AgentSession, JobContext, JobProcess, ChatContext, ChatMessage
 from livekit.agents import RoomInputOptions, WorkerOptions, cli
 from livekit.agents import get_job_context
+from livekit.agents import metrics
+from livekit.agents.metrics import TTSMetrics
 from livekit import rtc
 from livekit.plugins import noise_cancellation, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
@@ -24,7 +26,7 @@ from livekit.plugins.elevenlabs import VoiceSettings
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import Config
-from prompts import INTERVIEW_CONDUCTOR_PROMPT
+from prompts import INTERVIEW_CONDUCTOR_PROMPT, MOCK_INTERVIEW_PROMPT
 from services.rag_service import RAGService
 
 # Global RAG service instance
@@ -39,14 +41,17 @@ console = logging.getLogger("console")
 class InterviewAssistant(Agent):
     """Interview practice assistant agent with video frame sampling"""
     
-    def __init__(self, chat_ctx: ChatContext, rag_tool=None) -> None:
+    def __init__(self, chat_ctx: ChatContext, rag_tool=None, instructions=None, interview_mode: str = "practice") -> None:
         tools = []
         if rag_tool:
             tools.append(rag_tool)
         
+        # Use provided instructions or default to practice prompt
+        prompt = instructions or INTERVIEW_CONDUCTOR_PROMPT
+        
         super().__init__(
             chat_ctx=chat_ctx,
-            instructions=INTERVIEW_CONDUCTOR_PROMPT,
+            instructions=prompt,
             tools=tools,
         )
         
@@ -56,9 +61,16 @@ class InterviewAssistant(Agent):
         self._camera_stream = None
         self._screen_stream = None
         self._video_tasks = []
+        self._interview_mode = interview_mode
+        self._last_question_time = None
+        self._silence_check_task = None
+        self._last_screen_content_hash = None  # Track screen content changes
+        self._session_context = None  # Store session context for silence checks
+        self._agent_session = None  # Store agent session for silence checks
+        self._is_checking_silence = False  # Flag to prevent duplicate silence checks
     
     async def on_enter(self):
-        """Called when agent enters the room - set up video streams"""
+        """Called when agent enters the room - set up video streams and audio tracking"""
         room = get_job_context().room
         
         # Find video tracks from remote participants
@@ -73,6 +85,20 @@ class InterviewAssistant(Agent):
                 self._create_video_stream(track, publication.source)
         
         room.on("track_subscribed", on_track_subscribed)
+        
+        # For mock interviews, also track audio tracks to detect when agent finishes speaking
+        if self._interview_mode == "mock-interview":
+            import time
+            
+            def on_track_unsubscribed_audio(track: rtc.Track, publication: rtc.TrackPublication, participant: rtc.RemoteParticipant):
+                """Track when agent audio ends"""
+                if track.kind == rtc.TrackKind.KIND_AUDIO:
+                    # Check if this is the agent (local participant is the agent)
+                    if participant.identity == room.local_participant.identity:
+                        self._last_question_time = time.time()
+                        logger.info(f"⏱️ Agent finished speaking (via on_enter track_unsubscribed), timestamp updated: {self._last_question_time}")
+            
+            room.on("track_unsubscribed", on_track_unsubscribed_audio)
     
     def _create_video_stream(self, track: rtc.Track, source: int):
         """Create a video stream to sample frames from a track"""
@@ -115,6 +141,12 @@ class InterviewAssistant(Agent):
         # Import ImageContent here to avoid import issues
         from livekit.agents.llm import ImageContent
         
+        # Reset silence check timer when user responds
+        if self._interview_mode == "mock-interview":
+            # Reset the timestamp so silence detection restarts after next agent message
+            self._last_question_time = None
+            logger.info("⏱️ User responded - silence timer reset, will restart after next agent message")
+        
         # Add camera frame if available
         if self._latest_camera_frame:
             try:
@@ -126,8 +158,8 @@ class InterviewAssistant(Agent):
             except Exception as e:
                 logger.warning(f"Could not add camera frame to context: {e}")
         
-        # Add screen share frame if available
-        if self._latest_screen_frame:
+        # Add screen share frame if available (only for mock interviews, silently)
+        if self._latest_screen_frame and self._interview_mode == "mock-interview":
             try:
                 new_message.content.append(
                     ImageContent(image=self._latest_screen_frame)
@@ -136,6 +168,15 @@ class InterviewAssistant(Agent):
                 self._latest_screen_frame = None  # Clear after adding
             except Exception as e:
                 logger.warning(f"Could not add screen share frame to context: {e}")
+    
+    async def on_agent_turn_completed(self, turn_ctx: ChatContext) -> None:
+        """Called when agent finishes speaking - update timestamp for silence detection (backup)"""
+        if self._interview_mode == "mock-interview":
+            import time
+            # Update timestamp when agent finishes speaking (backup to session.say wrapper)
+            # This ensures we catch all agent speech even if wrapper doesn't fire
+            self._last_question_time = time.time()
+            logger.info("⏱️ Agent finished speaking (on_agent_turn_completed), timestamp updated")
 
 
 def prewarm(proc: JobProcess):
@@ -168,8 +209,11 @@ def _create_llm_instance():
     )
 
 
-def _create_agent_session(ctx: JobContext, llm_instance):
+def _create_agent_session(ctx: JobContext, llm_instance, interview_mode: str = "practice"):
     """Create AgentSession with all required components"""
+    # Use default MultilingualModel - silence detection is handled in the agent's on_agent_turn_started method
+    turn_detector = MultilingualModel()
+    
     return AgentSession(
         stt="deepgram/nova-3:multi",
         llm=llm_instance,
@@ -184,7 +228,7 @@ def _create_agent_session(ctx: JobContext, llm_instance):
                 speed=0.87
             ),
         ),
-        turn_detection=MultilingualModel(),
+        turn_detection=turn_detector,
         vad=ctx.proc.userdata["vad"],
         preemptive_generation=False,
         allow_interruptions=True,
@@ -329,11 +373,13 @@ async def entrypoint(ctx: JobContext):
             logger.debug(f"Could not extract from participant metadata: {e}")
     
     # Extract values from metadata_dict
+    interview_mode = "practice"  # Default mode
     if metadata_dict:
         user_name_from_metadata = metadata_dict.get('user_name')
         job_description = metadata_dict.get('job_description')
+        interview_mode = metadata_dict.get('mode', 'practice')
         
-        logger.info(f"🔍 Extracted from metadata - user_name: {user_name_from_metadata}, job_description length: {len(job_description) if job_description else 0}")
+        logger.info(f"🔍 Extracted from metadata - user_name: {user_name_from_metadata}, job_description length: {len(job_description) if job_description else 0}, mode: {interview_mode}")
         logger.info(f"🔍 Full metadata dict keys: {list(metadata_dict.keys())}")
         
         # Use user_name from metadata if available, otherwise use extracted user_name
@@ -361,7 +407,7 @@ async def entrypoint(ctx: JobContext):
         logger.info("👤 User name: Not available")
     
     llm_instance = _create_llm_instance()
-    session = _create_agent_session(ctx, llm_instance)
+    session = _create_agent_session(ctx, llm_instance, interview_mode)
     
     initial_ctx = ChatContext()
     
@@ -394,10 +440,24 @@ Use this job description to:
     else:
         logger.warning("⚠️ No job description available - agent will conduct general interview practice")
     
-    # Add video analysis capabilities context
-    initial_ctx.add_message(
-        role="system",
-        content="""VIDEO ANALYSIS CAPABILITIES AND PROACTIVE GUIDANCE:
+    # Add video analysis capabilities context (different for mock vs practice)
+    if interview_mode == "mock-interview":
+        initial_ctx.add_message(
+            role="system",
+            content="""VIDEO ANALYSIS IN INTERVIEW MODE:
+- Camera, microphone, and screen share are REQUIRED - they should already be enabled
+- Observe body language, posture, eye contact, and facial expressions for evaluation
+- Analyze code when sent via IDE or screen share for technical assessment
+- Provide minimal feedback during interview - focus on evaluation, not teaching
+- Note observations silently for final evaluation - do NOT interrupt the interview flow with feedback
+- Be professional and evaluative in your observations
+- When reviewing code, be critical: "I see an issue here..." or "This approach has problems..."
+- Do NOT provide coaching or suggestions - only evaluate"""
+        )
+    else:
+        initial_ctx.add_message(
+            role="system",
+            content="""VIDEO ANALYSIS CAPABILITIES AND PROACTIVE GUIDANCE:
 - PROACTIVELY suggest features to candidates:
   * Early in conversation: "I'd love to help you with your body language! Would you like to turn on your camera so I can give you real-time feedback?"
   * When discussing coding: "For coding practice, you can share your screen and I'll help analyze your code, or use the Code Editor feature - just click 'Code Editor' in the sidebar!"
@@ -414,23 +474,66 @@ Use this job description to:
 - For coding: "I notice in your code [observation]. [Suggestion]. [Teaching point]."
 - Remember: You're their teacher and coach - use video analysis to help them succeed!
 - Be proactive in suggesting features - don't wait for them to ask!"""
-    )
-    logger.info("✅ Video analysis capabilities added to prompt context")
+        )
+    logger.info(f"✅ Video analysis capabilities added to prompt context (mode: {interview_mode})")
     
     # Add context about resume RAG tool if available
     if user_name and _GLOBAL_RAG_SERVICE:
-        initial_ctx.add_message(
-            role="system",
-            content="The candidate may have uploaded their resume. Use the search_candidate_info tool to access their background, skills, and experience for personalized questions. Use this tool autonomously when you need specific details from their resume."
-        )
+        if interview_mode == "mock-interview":
+            initial_ctx.add_message(
+                role="system",
+                content="CRITICAL: You have access to the candidate's resume through the search_candidate_info tool. NEVER say 'let me search', 'let me check', 'I'll look up', 'let me review', or any similar phrases. Use the tool COMPLETELY SILENTLY. After using it, ask questions naturally as if you already knew the information. Only mention reviewing their resume ONCE at the very beginning: 'I've reviewed your resume. Let's begin.' After that, NEVER mention searching or checking the resume again."
+            )
+        else:
+            initial_ctx.add_message(
+                role="system",
+                content="The candidate may have uploaded their resume. Use the search_candidate_info tool to access their background, skills, and experience for personalized questions. Use this tool autonomously when you need specific details from their resume."
+            )
     
     # Get RAG tool if available
     rag_tool = None
     if _GLOBAL_RAG_SERVICE:
-        rag_tool = _GLOBAL_RAG_SERVICE.get_rag_function_tool()
+        rag_tool = _GLOBAL_RAG_SERVICE.get_rag_function_tool(is_mock_interview=(interview_mode == "mock-interview"))
         logger.info("✅ RAG tool added to agent")
     
-    assistant = InterviewAssistant(chat_ctx=initial_ctx, rag_tool=rag_tool)
+    # Select prompt based on interview mode
+    if interview_mode == "mock-interview":
+        prompt = MOCK_INTERVIEW_PROMPT
+        logger.info("🎯 Using MOCK INTERVIEW mode - agent will act as real interviewer")
+    else:
+        prompt = INTERVIEW_CONDUCTOR_PROMPT
+        logger.info("🎯 Using PRACTICE mode - agent will act as practice partner")
+    
+    assistant = InterviewAssistant(chat_ctx=initial_ctx, rag_tool=rag_tool, instructions=prompt, interview_mode=interview_mode)
+    
+    # Store session reference in assistant for silence checks
+    assistant._agent_session = session
+    
+    # Set up silence detection for mock interviews BEFORE starting session
+    original_say = None  # Will be set in mock interview mode
+    if interview_mode == "mock-interview":
+        import time
+        
+        # Wrap session.say to track when agent speaks
+        original_say = session.say
+        
+        async def say_with_tracking(text: str, **kwargs):
+            """Wrap session.say to track when agent finishes speaking"""
+            result = await original_say(text, **kwargs)
+            
+            # Skip tracking for the silence check message itself to avoid infinite loop
+            if "Are you still there" in text or "Can you hear me" in text:
+                return result
+            
+            # After agent finishes speaking, update the timestamp
+            # This ensures silence detection works throughout the entire session
+            assistant._last_question_time = time.time()
+            logger.info(f"⏱️ Agent finished speaking (via session.say): '{text[:50]}...' - timestamp updated: {assistant._last_question_time}")
+            return result
+        
+        # Replace session.say BEFORE starting the session
+        session.say = say_with_tracking
+        logger.info("✅ Session.say wrapper installed for silence detection")
     
     await session.start(
         agent=assistant,
@@ -442,8 +545,67 @@ Use this job description to:
     
     logger.info("✅ Interview session started")
     
-    # TrackSource enum values (using integers to avoid enum name issues)
-    # Based on LiveKit protocol: Camera=1, Microphone=2, ScreenShare=3
+    # Hook into session metrics to track agent speech for mock interviews
+    # TTSMetrics fires when TTS completes - this is the most reliable way
+    if interview_mode == "mock-interview":
+        import time
+        
+        # Monitor TTS metrics to detect when agent finishes speaking
+        @session.on("metrics_collected")
+        def on_metrics_collected(event):
+            """Called when metrics are collected - check for TTS completion"""
+            if isinstance(event.metrics, TTSMetrics):
+                # TTS completed - agent finished speaking
+                assistant._last_question_time = time.time()
+                logger.info(f"⏱️ Agent finished speaking (via TTSMetrics completion), timestamp updated: {assistant._last_question_time}")
+        
+        logger.info("✅ Session TTSMetrics handler registered for silence detection")
+    
+    # Start background silence monitoring task for mock interviews
+    if interview_mode == "mock-interview":
+        import time
+        
+        # Single background monitoring task that runs throughout the session
+        async def monitor_silence_continuously():
+            """Background task to continuously monitor for silence throughout the session"""
+            while True:
+                try:
+                    await asyncio.sleep(1.0)  # Check every second
+                    
+                    # Only check if we have a timestamp and we're not already checking
+                    if assistant._last_question_time and not assistant._is_checking_silence:
+                        time_since_question = time.time() - assistant._last_question_time
+                        
+                        if time_since_question >= 5.0:
+                            # Prevent duplicate checks
+                            assistant._is_checking_silence = True
+                            logger.info("⏱️ 5 seconds of silence detected - checking if candidate is available")
+                            
+                            try:
+                                # Ask if candidate is available using original_say
+                                if original_say:
+                                    await original_say("Are you still there? Can you hear me?")
+                                else:
+                                    await session.say("Are you still there? Can you hear me?")
+                                # Update timestamp after asking (so we can check again if still silent)
+                                assistant._last_question_time = time.time()
+                                logger.info("⏱️ Silence check message sent, continuing to monitor")
+                            except Exception as e:
+                                logger.warning(f"Error asking if candidate is available: {e}")
+                            finally:
+                                assistant._is_checking_silence = False
+                                
+                except asyncio.CancelledError:
+                    logger.info("Silence monitoring task cancelled")
+                    break
+                except Exception as e:
+                    logger.warning(f"Error in silence monitoring: {e}")
+                    await asyncio.sleep(1.0)  # Wait before retrying
+        
+        # Start the continuous monitoring task
+        silence_monitor_task = asyncio.create_task(monitor_silence_continuously())
+        logger.info("✅ Continuous silence monitoring started for mock interview mode")
+    
     SOURCE_CAMERA = 1
     SOURCE_SCREEN_SHARE = 3
     
@@ -486,14 +648,24 @@ Use this job description to:
     
     # Update initial context if video is already available
     if has_camera or has_screen_share:
-        video_context = "The candidate has "
-        if has_camera:
-            video_context += "enabled their camera"
-        if has_camera and has_screen_share:
-            video_context += " and "
-        if has_screen_share:
-            video_context += "started screen sharing"
-        video_context += ". You can now see their video feed and provide real-time feedback."
+        if interview_mode == "mock-interview":
+            video_context = "The candidate has "
+            if has_camera:
+                video_context += "enabled their camera"
+            if has_camera and has_screen_share:
+                video_context += " and "
+            if has_screen_share:
+                video_context += "started screen sharing"
+            video_context += ". Observe and evaluate silently - do NOT provide feedback during the interview."
+        else:
+            video_context = "The candidate has "
+            if has_camera:
+                video_context += "enabled their camera"
+            if has_camera and has_screen_share:
+                video_context += " and "
+            if has_screen_share:
+                video_context += "started screen sharing"
+            video_context += ". You can now see their video feed and provide real-time feedback."
         
         initial_ctx.add_message(
             role="system",
@@ -501,8 +673,18 @@ Use this job description to:
         )
         logger.info(f"✅ Video context updated: camera={has_camera}, screen_share={has_screen_share}")
     
-    greeting = await _generate_personalized_greeting(llm_instance, user_name)
-    await session.say(greeting)
+    # Generate appropriate greeting based on mode
+    if interview_mode == "mock-interview":
+        # Professional interviewer greeting for mock interview
+        if user_name:
+            greeting = f"Hello {user_name}. I'm Nila, and I'll be conducting your interview today. Please make sure to turn on your camera and share your screen."
+        else:
+            greeting = "Hello. I'm Nila, and I'll be conducting your interview today. Please make sure to turn on your camera and share your screen."
+        await session.say(greeting)
+        logger.info("🎯 Mock interview mode - professional greeting sent")
+    else:
+        greeting = await _generate_personalized_greeting(llm_instance, user_name)
+        await session.say(greeting)
 
 
 def run_voice_agent():

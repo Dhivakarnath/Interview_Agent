@@ -66,6 +66,7 @@ class InterviewRoomRequest(BaseModel):
     job_description: Optional[str] = Field(None, description="Job description text")
     resume_id: Optional[str] = Field(None, description="Resume ID if already uploaded")
     language: str = Field(default="en-US", description="Language code")
+    mode: Optional[str] = Field(default="practice", description="Interview mode: 'practice' or 'mock-interview'")
 
 
 class ResumeUploadResponse(BaseModel):
@@ -210,6 +211,7 @@ async def create_interview_room(request: InterviewRoomRequest):
         token_metadata = {
             "user_name": user_name,
             "session_id": session_id,
+            "mode": request.mode or "practice",
         }
         
         if request.job_description:
@@ -220,6 +222,8 @@ async def create_interview_room(request: InterviewRoomRequest):
         
         if request.resume_id:
             token_metadata["resume_id"] = request.resume_id
+        
+        logger.info(f"🎯 Interview mode: {request.mode or 'practice'}")
         
         jwt_token = generate_livekit_token(
             room_name=room_name,
