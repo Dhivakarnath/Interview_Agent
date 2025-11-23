@@ -19,8 +19,9 @@ import {
 } from '@livekit/components-react';
 import { Room, RoomEvent, RemoteParticipant, RemoteTrack, Track } from 'livekit-client';
 import IDE from '../components/IDE';
+import MockInterviewView from '../components/MockInterviewView';
 
-type TabType = 'interview' | 'settings';
+type TabType = 'practice' | 'mock-interview' | 'settings';
 
 // Helper function to clean markdown and format text professionally
 function cleanText(text: string): string {
@@ -177,8 +178,9 @@ export default function Home() {
   const [isUploadingResume, setIsUploadingResume] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [sessionData, setSessionData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('interview');
+  const [activeTab, setActiveTab] = useState<TabType>('practice');
   const [isIDEView, setIsIDEView] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const handleResumeUpload = async (file: File) => {
@@ -297,32 +299,66 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white">
       <div className="flex h-screen">
         {/* Sidebar */}
-        <div className="w-64 bg-gray-900 border-r border-cyan-500/20 flex flex-col">
-          <div className="p-6 border-b border-cyan-500/20">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-              Interview Practice
-            </h1>
-            <p className="text-gray-400 text-sm mt-1">AI-Powered Mock Interviews</p>
+        <div className={`${isSidebarCollapsed ? 'w-16' : 'w-64'} bg-gray-900 border-r border-cyan-500/20 flex flex-col transition-all duration-300`}>
+          <div className="p-6 border-b border-cyan-500/20 flex items-center justify-between">
+            {!isSidebarCollapsed && (
+              <>
+                <div>
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+                    Interview Practice
+                  </h1>
+                  <p className="text-gray-400 text-sm mt-1">AI-Powered Mock Interviews</p>
+                </div>
+              </>
+            )}
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {isSidebarCollapsed ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                )}
+              </svg>
+            </button>
           </div>
 
           <nav className="flex-1 p-4 space-y-2">
             <button
               onClick={() => {
-                setActiveTab('interview');
+                setActiveTab('practice');
                 setIsIDEView(false);
               }}
               className={`w-full text-left px-4 py-3 rounded-lg transition-all ${
-                activeTab === 'interview' && !isIDEView
+                activeTab === 'practice' && !isIDEView
                   ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
                   : 'text-gray-400 hover:text-cyan-400 hover:bg-gray-800'
               }`}
+              title={isSidebarCollapsed ? 'Practice with Agent' : ''}
             >
-              🎤 Interview Agent
+              {isSidebarCollapsed ? '🎤' : '🎤 Practice with Agent'}
             </button>
-            {room && (
+            <button
+              onClick={() => {
+                setActiveTab('mock-interview');
+                setIsIDEView(false);
+              }}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-all ${
+                activeTab === 'mock-interview'
+                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
+                  : 'text-gray-400 hover:text-cyan-400 hover:bg-gray-800'
+              }`}
+              title={isSidebarCollapsed ? 'Mock Interviews' : ''}
+            >
+              {isSidebarCollapsed ? '🎯' : '🎯 Mock Interviews'}
+            </button>
+            {room && activeTab === 'practice' && (
               <button
                 onClick={() => {
-                  setActiveTab('interview');
+                  setActiveTab('practice');
                   setIsIDEView(!isIDEView);
                 }}
                 className={`w-full text-left px-4 py-3 rounded-lg transition-all ${
@@ -330,8 +366,9 @@ export default function Home() {
                     ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
                     : 'text-gray-400 hover:text-cyan-400 hover:bg-gray-800'
                 }`}
+                title={isSidebarCollapsed ? 'Code Editor' : ''}
               >
-                💻 Code Editor
+                {isSidebarCollapsed ? '💻' : '💻 Code Editor'}
               </button>
             )}
             <button
@@ -341,8 +378,9 @@ export default function Home() {
                   ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
                   : 'text-gray-400 hover:text-cyan-400 hover:bg-gray-800'
               }`}
+              title={isSidebarCollapsed ? 'Settings' : ''}
             >
-              ⚙️ Settings
+              {isSidebarCollapsed ? '⚙️' : '⚙️ Settings'}
             </button>
           </nav>
 
@@ -362,9 +400,27 @@ export default function Home() {
           )}
         </div>
 
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {!room ? (
+                {/* Main Content */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  {activeTab === 'mock-interview' ? (
+                    <div className="flex-1 overflow-y-auto">
+                      <MockInterviewView
+                        userName={userName}
+                        setUserName={setUserName}
+                        resumeFile={resumeFile}
+                        setResumeFile={setResumeFile}
+                        resumeId={resumeId}
+                        setResumeId={setResumeId}
+                        jobDescription={jobDescription}
+                        setJobDescription={setJobDescription}
+                        isUploadingResume={isUploadingResume}
+                        setIsUploadingResume={setIsUploadingResume}
+                        uploadProgress={uploadProgress}
+                        setUploadProgress={setUploadProgress}
+                        handleResumeUpload={handleResumeUpload}
+                      />
+                    </div>
+                  ) : !room ? (
             <div className="flex-1 flex items-center justify-center p-8">
               <div className="max-w-5xl w-full">
                 <div className="bg-gray-800/50 backdrop-blur-sm border border-cyan-500/30 rounded-2xl p-10 shadow-2xl">
@@ -545,28 +601,36 @@ export default function Home() {
             </div>
           ) : (
             <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Header */}
-              <div className="bg-gray-800/50 border-b border-cyan-500/20 p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold text-cyan-400">Interview Session</h2>
-                    <p className="text-sm text-gray-400">Candidate: <span className="text-cyan-400">{userName}</span></p>
-                  </div>
-                </div>
-              </div>
-
               {/* Tab Content */}
               <div className="flex-1 overflow-hidden flex flex-col">
-                {activeTab === 'interview' && room && (
-                  <RoomContext.Provider value={room}>
-                    <InterviewAgentView 
-                      userName={userName}
-                      setUserName={setUserName}
-                      isIDEView={isIDEView}
-                      setIsIDEView={setIsIDEView}
-                    />
-                  </RoomContext.Provider>
-                )}
+                {activeTab === 'practice' && room ? (
+                  <>
+                    {/* Header */}
+                    <div className="bg-gray-800/50 border-b border-cyan-500/20 p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h2 className="text-xl font-semibold text-cyan-400">Interview Session</h2>
+                          <p className="text-sm text-gray-400">Candidate: <span className="text-cyan-400">{userName}</span></p>
+                        </div>
+                      </div>
+                    </div>
+                    <RoomContext.Provider value={room}>
+                      <InterviewAgentView 
+                        userName={userName}
+                        setUserName={setUserName}
+                        isIDEView={isIDEView}
+                        setIsIDEView={setIsIDEView}
+                        mode="practice"
+                      />
+                    </RoomContext.Provider>
+                  </>
+                ) : activeTab === 'practice' ? (
+                  <div className="flex-1 flex items-center justify-center p-8">
+                    <div className="text-center text-gray-400">
+                      <p>Please start an interview session from the Practice with Agent tab.</p>
+                    </div>
+                  </div>
+                ) : null}
 
                 {activeTab === 'settings' && (
                   <div className="flex-1 overflow-auto p-6">
@@ -635,11 +699,13 @@ function InterviewAgentView({
   setUserName,
   isIDEView,
   setIsIDEView,
+  mode = 'practice',
 }: {
   userName: string;
   setUserName: (name: string) => void;
   isIDEView: boolean;
   setIsIDEView: (value: boolean) => void;
+  mode?: 'practice' | 'mock-interview';
 }) {
   const { localParticipant, microphoneTrack } = useLocalParticipant();
   const room = useRoomContext();
