@@ -78,16 +78,17 @@ class InterviewAssistant(Agent):
         """Called when agent enters the room - set up video streams and audio tracking"""
         room = get_job_context().room
         
-        # Find video tracks from remote participants
+        # Find video tracks from remote participants (non-blocking)
         for participant in room.remote_participants.values():
             for publication in participant.track_publications.values():
                 if publication.track and publication.track.kind == rtc.TrackKind.KIND_VIDEO:
-                    self._create_video_stream(publication.track, publication.source)
+                    # Create task without awaiting to avoid blocking job acceptance
+                    asyncio.create_task(self._create_video_stream(publication.track, publication.source))
         
         # Watch for new video tracks
         def on_track_subscribed(track: rtc.Track, publication: rtc.TrackPublication, participant: rtc.RemoteParticipant):
             if track.kind == rtc.TrackKind.KIND_VIDEO:
-                self._create_video_stream(track, publication.source)
+                asyncio.create_task(self._create_video_stream(track, publication.source))
         
         room.on("track_subscribed", on_track_subscribed)
         
@@ -105,7 +106,7 @@ class InterviewAssistant(Agent):
             
             room.on("track_unsubscribed", on_track_unsubscribed_audio)
     
-    def _create_video_stream(self, track: rtc.Track, source: int):
+    async def _create_video_stream(self, track: rtc.Track, source: int):
         """Create a video stream to sample frames from a track"""
         SOURCE_CAMERA = 1
         SOURCE_SCREEN_SHARE = 3
@@ -113,7 +114,7 @@ class InterviewAssistant(Agent):
         # Close existing stream if switching sources
         if source == SOURCE_CAMERA:
             if self._camera_stream is not None:
-                self._camera_stream.close()
+                await self._camera_stream.aclose()
             self._camera_stream = rtc.VideoStream(track)
             logger.info("Created camera video stream")
             
@@ -128,7 +129,7 @@ class InterviewAssistant(Agent):
             
         elif source == SOURCE_SCREEN_SHARE:
             if self._screen_stream is not None:
-                self._screen_stream.close()
+                await self._screen_stream.aclose()
             self._screen_stream = rtc.VideoStream(track)
             logger.info("Created screen share video stream")
             
@@ -175,7 +176,7 @@ class InterviewAssistant(Agent):
             except Exception as e:
                 logger.warning(f"Could not add camera frame to context: {e}")
         
-        if self._latest_screen_frame and self._interview_mode == "mock-interview":
+        if self._latest_screen_frame:
             try:
                 new_message.content.append(
                     ImageContent(image=self._latest_screen_frame)
