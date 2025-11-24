@@ -13,9 +13,11 @@ import {
   useRoomContext,
   VideoTrack,
   useTracks,
+  BarVisualizer,
   type ReceivedChatMessage,
   type TextStreamData,
   type TrackReference,
+  type AgentState,
 } from '@livekit/components-react';
 import { Room, RoomEvent, RemoteParticipant, RemoteTrack, Track } from 'livekit-client';
 import IDE from '../components/IDE';
@@ -692,9 +694,21 @@ function InterviewAgentView({
     return merged.sort((a, b) => a.timestamp - b.timestamp);
   }, [transcriptions, chat.chatMessages, room]);
   
-  // Voice assistant state (kept for potential future use)
-  useVoiceAssistant();
+  // Get agent state for indicator
+  const { state: agentState, audioTrack: agentAudioTrack } = useVoiceAssistant();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Helper function to get agent state text
+  const getAgentStateText = (state: AgentState): string => {
+    switch(state) {
+      case 'listening': return 'Agent listening';
+      case 'thinking': return 'Agent thinking';
+      case 'speaking': return 'Agent speaking';
+      case 'connecting': return 'Connecting...';
+      case 'initializing': return 'Initializing...';
+      default: return '';
+    }
+  };
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -782,6 +796,44 @@ function InterviewAgentView({
                   </ul>
                 )}
               </div>
+              
+              {/* Agent State Indicator */}
+              {agentState && agentState !== 'disconnected' && (
+                <div className="agent-state-indicator bg-gradient-to-r from-cyan-500/25 to-cyan-400/15 border-t-2 border-cyan-400 px-3 py-3 flex items-center gap-3 shadow-lg shadow-cyan-500/20">
+                  <div className="flex items-center gap-1.5 h-6 min-w-[60px] justify-center relative">
+                    <BarVisualizer
+                      barCount={5}
+                      state={agentState}
+                      trackRef={agentAudioTrack}
+                      options={{ minHeight: 10, maxHeight: 20 }}
+                      className="flex h-6 w-full items-center justify-center gap-1"
+                    >
+                      <span className="h-full w-1 origin-center rounded-full bg-cyan-400 data-[lk-highlighted=true]:bg-cyan-300 data-[lk-muted=true]:bg-cyan-500/50" />
+                    </BarVisualizer>
+                    {/* Fallback bars - always visible */}
+                    <div className="flex items-center gap-1.5 absolute inset-0 pointer-events-none justify-center">
+                      {[1, 2, 3, 4, 5].map((i) => {
+                        const baseHeight = agentState === 'speaking' ? 14 : agentState === 'listening' ? 12 : agentState === 'thinking' ? 10 : 8;
+                        return (
+                          <div
+                            key={i}
+                            className="w-1.5 bg-cyan-400 rounded-full"
+                            style={{
+                              height: `${baseHeight + (i % 3) * 4}px`,
+                              boxShadow: '0 0 12px rgba(34, 211, 238, 1), 0 0 24px rgba(34, 211, 238, 0.6)',
+                              animation: `pulse ${0.8 + i * 0.15}s ease-in-out infinite`,
+                              animationDelay: `${i * 0.1}s`,
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <span className="text-sm text-cyan-100 font-bold tracking-wide drop-shadow-[0_0_10px_rgba(34,211,238,0.8)] whitespace-nowrap">
+                    {getAgentStateText(agentState)}
+                  </span>
+                </div>
+              )}
               
               {/* Chat Input */}
               <div className="bg-gray-800/50 border-t border-cyan-500/20 p-3">
@@ -882,6 +934,44 @@ function InterviewAgentView({
               </ul>
             )}
           </div>
+          
+          {/* Agent State Indicator */}
+          {agentState && agentState !== 'disconnected' && (
+            <div className="agent-state-indicator bg-gradient-to-r from-cyan-500/25 to-cyan-400/15 border-t-2 border-cyan-400 px-4 py-3 flex items-center gap-3 shadow-lg shadow-cyan-500/20">
+              <div className="flex items-center gap-1.5 h-6 min-w-[60px] justify-center relative">
+                <BarVisualizer
+                  barCount={5}
+                  state={agentState}
+                  trackRef={agentAudioTrack}
+                  options={{ minHeight: 10, maxHeight: 20 }}
+                  className="flex h-6 w-full items-center justify-center gap-1"
+                >
+                  <span className="h-full w-1 origin-center rounded-full bg-cyan-400 data-[lk-highlighted=true]:bg-cyan-300 data-[lk-muted=true]:bg-cyan-500/50" />
+                </BarVisualizer>
+                {/* Fallback bars - always visible */}
+                <div className="flex items-center gap-1.5 absolute inset-0 pointer-events-none justify-center">
+                  {[1, 2, 3, 4, 5].map((i) => {
+                    const baseHeight = agentState === 'speaking' ? 14 : agentState === 'listening' ? 12 : agentState === 'thinking' ? 10 : 8;
+                    return (
+                      <div
+                        key={i}
+                        className="w-1.5 bg-cyan-400 rounded-full"
+                        style={{
+                          height: `${baseHeight + (i % 3) * 4}px`,
+                          boxShadow: '0 0 12px rgba(34, 211, 238, 1), 0 0 24px rgba(34, 211, 238, 0.6)',
+                          animation: `pulse ${0.8 + i * 0.15}s ease-in-out infinite`,
+                          animationDelay: `${i * 0.1}s`,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+              <span className="text-sm text-cyan-100 font-bold tracking-wide drop-shadow-[0_0_10px_rgba(34,211,238,0.8)] whitespace-nowrap">
+                {getAgentStateText(agentState)}
+              </span>
+            </div>
+          )}
           
           {/* Chat Input */}
           <div className="bg-gray-800/50 border-t border-cyan-500/20 p-4">

@@ -959,7 +959,9 @@ s3://interview-sessions/
 - **Real-Time Voice Interaction**: Natural conversation flow with AI interviewer using LiveKit for WebRTC communication
 - **Video Analysis**: Body language and presence analysis using AWS Bedrock multimodal capabilities
 - **Screen Share Analysis**: Code review and technical assessment during coding interviews
-- **Resume-Based Personalization**: RAG (Retrieval Augmented Generation) system using Qdrant vector database for context-aware questions
+- **Resume-Based Personalization**: RAG (Retrieval Augmented Generation) system using Qdrant 
+- **Agent-State-Update**: We can see the Agent's current state in the practice mode like(listening, thinking, speaking) 
+vector database for context-aware questions
 - **Dual Interview Modes**:
   - **Practice Mode**: Supportive coaching with real-time feedback
   - **Mock Interview Mode**: Realistic interview simulation with strict requirements and post-interview feedback
